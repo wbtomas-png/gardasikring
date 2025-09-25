@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opplæringsportal – Video + Quiz + Attest</title>
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#1f2937;--text:#e5e7eb;--acc:#22d3ee;--ok:#10b981;--warn:#f59e0b;--err:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(135deg,var(--bg),#0b122a);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    header{padding:20px;border-bottom:1px solid #263247;background:#0f172acc;backdrop-filter:blur(6px);position:sticky;top:0}
+    h1{margin:0;font-size:20px}
+    .container{display:grid;grid-template-columns:380px 1fr;gap:16px;padding:16px}
+    @media(max-width:1100px){.container{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,var(--card),#0b1222);border:1px solid #263247;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    .pad{padding:16px}
+    label{display:block;font-size:12px;margin-top:10px;opacity:.95}
+    input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3a55;background:#0b1222;color:var(--text)}
+    textarea{min-height:80px}
+    .btnbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    button{padding:10px 14px;border-radius:12px;border:1px solid #263247;background:#1d2840;color:#dbeafe;cursor:pointer}
+    button.primary{background:linear-gradient(180deg,var(--acc),#0ea5b7);border-color:transparent;color:#031f27;font-weight:600}
+    .muted{font-size:12px;opacity:.75}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .bar{height:10px;background:#0b1222;border:1px solid #263247;border-radius:999px;overflow:hidden}
+    .bar>div{height:100%;background:#22d3ee;width:0%}
+    .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+    #attest{background:white;color:#111;border-radius:12px}
+    #attest .a4{width:210mm;min-height:297mm;padding:18mm;margin:0 auto}
+    #attest h2{margin:0 0 6px 0}
+    #sig{border:1px dashed #3a4c70;border-radius:8px;height:140px;background:#0b1222}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .imglogo{height:30px}
+    @media print{header,.container>section:first-child{display:none!important} #attest{box-shadow:none} body{background:white}}
+    .note{font-size:12px;opacity:.85;padding:8px 10px;border:1px solid #2a3a55;border-radius:8px;background:#0b1222;margin-top:8px}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+  <header>
+    <h1>Opplæringsportal – Video + Quiz + Attest</h1>
+    <div class="muted">Se video → bestå quiz → bekreft & signer → generer attest (PDF) og logg</div>
+  </header>
+
+  <div class="container">
+    <!-- ADMIN / KURS-BYGGER + DELTAKERINFO -->
+    <section class="card pad">
+      <h2>Admin & kursbygger</h2>
+      <details open>
+        <summary><strong>Kurs-bibliotek</strong></summary>
+        <div class="row">
+          <div>
+            <label for="courseId">Velg lagret kurs</label>
+            <select id="courseId"></select>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <div class="btnbar">
+              <button id="btnLoad">Last</button>
+              <button id="btnDelete">Slett</button>
+            </div>
+          </div>
+        </div>
+        <div class="btnbar">
+          <button id="btnExportCourse">Eksporter kurs (JSON)</button>
+          <button id="btnImportCourse">Importer kurs (JSON)</button>
+          <button id="btnCopyLink">Kopier delingslenke</button>
+        </div>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <details open>
+        <summary><strong>Lag / rediger kurs</strong></summary>
+        <label for="tool">Utstyr/verktøy</label>
+        <select id="tool">
+          <option value="personlofter">Personløfter – grunnleggende bruk</option>
+          <option value="truck">Motvektstruck – sikker bruk</option>
+          <option value="vinsj">Vinsj – sikker betjening</option>
+          <option value="kappesliper">Kapp- og gjærsag – verneutstyr og bruk</option>
+          <option value="custom">Egendefinert …</option>
+        </select>
+        <div id="customWrap" style="display:none">
+          <label for="title">Egendefinert tittel</label>
+          <input id="title" placeholder="F.eks. Borskrutrekker – modell X" />
+        </div>
+        <label for="yt">YouTube‑URL (eller delingslenke)</label>
+        <input id="yt" placeholder="https://www.youtube.com/watch?v=VIDEO_ID" />
+        <div class="row">
+          <div>
+            <label for="threshold">Krav til sett prosent</label>
+            <input id="threshold" type="number" min="0" max="100" value="90" />
+          </div>
+          <div>
+            <label for="pass">Krav til riktig på quiz (%)</label>
+            <input id="pass" type="number" min="0" max="100" value="80" />
+          </div>
+        </div>
+        <div class="note">Tips: Lim inn transkript fra video for å få AI-forslag til spørsmål, eller bygg manuelt.</div>
+        <h3 style="margin-top:10px">Quiz-redigerer</h3>
+        <div id="quizEditor"></div>
+        <div class="btnbar">
+          <button id="btnAddQ">+ Legg til spørsmål</button>
+          <button id="btnAISuggest">AI: foreslå spørsmål fra transkript</button>
+        </div>
+        <label for="transcript" class="muted">(Valgfritt) Lim inn transkript/innhold fra video</label>
+        <textarea id="transcript" placeholder="Lim inn transkript/innhold…"></textarea>
+        <div class="btnbar">
+          <button class="primary" id="btnSaveCourse">Lagre kurs</button>
+          <button id="btnTest">Test video + quiz</button>
+        </div>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <details>
+        <summary><strong>Utsending & integrasjoner</strong></summary>
+        <label for="inviteList">Mottakere (kommaseparerte e‑poster)</label>
+        <textarea id="inviteList" placeholder="ola@example.no, kari@example.no"></textarea>
+        <label for="inviteMsg">Melding til e‑post</label>
+        <textarea id="inviteMsg" placeholder="Hei! Du er tildelt kurs: … Klikk lenken for å starte."></textarea>
+        <label for="emailEndpoint">(Valgfritt) E‑post‑endepunkt (POST) for utsending/logg</label>
+        <input id="emailEndpoint" placeholder="https://script.google.com/macros/s/…/exec" />
+        <label for="aiEndpoint">(Valgfritt) AI‑endepunkt (POST) for quizgenerering</label>
+        <input id="aiEndpoint" placeholder="https://script.google.com/macros/s/…/exec" />
+        <div class="btnbar">
+          <button id="btnSend">Send invitasjoner</button>
+          <button id="btnMailto">Åpne e‑postklient</button>
+        </div>
+        <p class="muted">Uten endepunkt brukes mailto‑fallback automatisk. Med endepunkt kan du masseutsende og logge i f.eks. Google Sheet.</p>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <h3>Deltaker</h3>
+      <label for="empName">Navn</label>
+      <input id="empName" />
+      <div class="grid2">
+        <div>
+          <label for="empId">Ansattnr / ID</label>
+          <input id="empId" />
+        </div>
+        <div>
+          <label for="email">E‑post</label>
+          <input id="email" type="email" />
+        </div>
+      </div>
+      <div class="btnbar"><button class="primary" id="btnLoadVideo">Last video</button></div>
+      <p class="muted">Bruk YouTube (unlisted) eller erstatt med Vimeo/lokal fil senere.</p>
+    </section>
+
+    <!-- KURSDELTAKER – video, quiz, bekreftelse og attest -->
+    <section>
+      <div class="card pad">
+        <h3>Video</h3>
+        <div id="playerWrap" style="aspect-ratio:16/9;background:#0b1222;border:1px solid #263247;border-radius:12px;display:grid;place-items:center;color:#89a3d1">
+          <div>Velg/lagre kurs og trykk «Last video»</div>
+        </div>
+        <label style="margin-top:12px">Progresjon video</label>
+        <div class="bar"><div id="pbar"></div></div>
+        <div class="muted" id="ptext">0 % sett</div>
+        <div class="note">Anti-juks: hopping fremover blir avvist og avspillingshastighet >1.25x låses.
+        </div>
+      </div>
+
+      <div class="card pad" style="margin-top:12px">
+        <h3>Quiz</h3>
+        <div id="quiz"></div>
+        <div class="btnbar"><button id="btnGrade">Sjekk svar</button><span id="qres" class="muted"></span></div>
+      </div>
+
+      <div class="card pad" style="margin-top:12px">
+        <h3>Bekreftelse og signatur</h3>
+        <label><input type="checkbox" id="ack" /> Jeg bekrefter at jeg har sett videoen og gjennomgått opplæringen.</label>
+        <label for="sig">Signer i feltet under</label>
+        <canvas id="sig" width="900" height="260"></canvas>
+        <div class="btnbar">
+          <button id="btnClearSig">Tøm signatur</button>
+          <button class="primary" id="btnComplete" disabled>Bekreft opplæring og lag attest</button>
+          <span class="muted" id="gateTxt">Lås opp: 1) se video ≥ krav, 2) bestå quiz ≥ krav, 3) kryss av og signer</span>
+        </div>
+      </div>
+
+      <div id="attest" class="card pad" style="margin-top:12px;display:none">
+        <div class="a4" id="cert">
+          <div class="row" style="align-items:center">
+            <div><h2>Attest for gjennomført utstyrsspesifikk opplæring</h2><div id="certSub" style="opacity:.8"></div></div>
+            <div style="text-align:right"><img class="imglogo" alt="Logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='50'%3E%3Crect width='200' height='50' rx='8' fill='%230ea5b7'/%3E%3Ctext x='100' y='32' fill='white' font-size='20' text-anchor='middle' font-family='Arial'%3EOPPL%C3%86RING%3C/text%3E%3C/svg%3E"></div>
+          </div>
+          <hr>
+          <p><strong>Deltaker:</strong> <span id="c_name"></span> &nbsp; <strong>ID:</strong> <span id="c_id"></span> &nbsp; <strong>E‑post:</strong> <span id="c_mail"></span></p>
+          <p><strong>Kurs:</strong> <span id="c_course"></span></p>
+          <p><strong>Video:</strong> <span id="c_video"></span></p>
+          <div class="grid2">
+            <div>
+              <p><strong>Video sett:</strong> <span id="c_seen"></span></p>
+              <p><strong>Quiz resultat:</strong> <span id="c_quiz"></span></p>
+              <p><strong>Dato/Tid (UTC):</strong> <span id="c_time"></span></p>
+            </div>
+            <div>
+              <p><strong>Bekreftelse:</strong> Deltaker har bekreftet at opplæringen er gjennomført og forstått.</p>
+              <p><strong>Henvisning:</strong> Forskrift om utførelse av arbeid kap. 10 (§§10‑1, 10‑2, 10‑3, 10‑4).</p>
+            </div>
+          </div>
+          <div class="row" style="margin-top:16px">
+            <div>
+              <p><strong>Signatur deltaker:</strong></p>
+              <img id="c_sig" alt="Signatur" style="max-width:100%;border:1px solid #ddd" />
+            </div>
+            <div>
+              <p><strong>Signatur instruktør (valgfri):</strong></p>
+              <div style="height:80px;border-bottom:1px solid #aaa"></div>
+            </div>
+          </div>
+          <p style="margin-top:16px;font-size:12px;opacity:.8">Oppbevar denne dokumentasjonen iht. virksomhetens HMS‑rutiner. Lagres gjerne sammen med risikovurdering, kursbevis og sjekklister.</p>
+        </div>
+        <div class="btnbar" style="margin-top:10px">
+          <button id="btnPrint">Skriv ut / Lagre som PDF</button>
+          <button id="btnPDF">Direkte PDF‑eksport</button>
+          <button id="btnCSV">Eksporter logg (CSV)</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- SCRIPT -->
+  <script>
+    // ---------- Hjelpefunksjoner ----------
+    const qs = s=>document.querySelector(s);
+    const qsa = s=>Array.from(document.querySelectorAll(s));
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+    function storageOK(){ try{ localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return true; }catch(e){ return false; } }
+
+    // ---------- Kurs-bibliotek (localStorage + delingslenke) ----------
+    function getStore(){ return storageOK()? JSON.parse(localStorage.getItem('courses')||'{}') : {}; }
+    function setStore(obj){ if(storageOK()){ localStorage.setItem('courses', JSON.stringify(obj)); fillCourseSelect(); } }
+    function fillCourseSelect(){ const sel=qs('#courseId'); if(!sel) return; const data=getStore(); sel.innerHTML=''; Object.keys(data).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=data[id].title||id; sel.appendChild(o); }); }
+    function newId(){ return 'c_'+Math.random().toString(36).slice(2,10); }
+
+    function quizFromEditor(){ const list=[]; qsa('#quizEditor>div.qitem').forEach(qd=>{ const q=qd.querySelector('.qtext').value; const a=[...qd.querySelectorAll('.opt')].map(o=>o.value); const radios=[...qd.querySelectorAll('input[type=radio]')]; const c=radios.findIndex(r=>r.checked); list.push({q,a,c:Math.max(0,c)}); }); return list; }
+
+    function buildQuizEditor(qsList){ const wrap=qs('#quizEditor'); wrap.innerHTML=''; const arr = (qsList && qsList.length)? qsList : [{q:'',a:['',''],c:0}]; arr.forEach(addQuestion);
+    }
+    function addQuestion(it){ it=it||{q:'',a:['',''],c:0}; const wrap=qs('#quizEditor'); const div=document.createElement('div'); div.className='qitem'; div.style.border='1px solid #263247'; div.style.borderRadius='8px'; div.style.padding='10px'; div.style.marginTop='8px';
+      div.innerHTML = `
+        <label>Spørsmål</label>
+        <input class="qtext" value="${escapeHtml(it.q)}" />
+        <label>Svaralternativer (merk riktig)</label>
+        <div class="opts"></div>
+        <div class="btnbar">
+          <button class="btnAddOpt">+ Alternativ</button>
+          <button class="btnDelQ">Slett spørsmål</button>
+        </div>`;
+      wrap.appendChild(div);
+      const opts=div.querySelector('.opts');
+      const group='r'+Math.random().toString(36).slice(2,7);
+      (it.a||['','']).forEach((opt,idx)=> addOpt(div, group, opt, idx===it.c));
+      div.querySelector('.btnAddOpt').addEventListener('click', e=>{ e.preventDefault(); addOpt(div, group, '', false); });
+      div.querySelector('.btnDelQ').addEventListener('click', e=>{ e.preventDefault(); div.remove(); });
+    }
+    function addOpt(qDiv, group, text='', correct=false){ const opts=qDiv.querySelector('.opts'); const row=document.createElement('div'); row.style.display='grid'; row.style.gridTemplateColumns='24px 1fr 80px'; row.style.gap='8px'; row.style.alignItems='center'; row.style.marginTop='6px';
+      row.innerHTML=`<input type="radio" name="${group}" ${correct?'checked':''}>
+                     <input class="opt" value="${escapeHtml(text)}" placeholder="Svaralternativ" />
+                     <button class="btnRemOpt">Fjern</button>`;
+      opts.appendChild(row);
+      row.querySelector('.btnRemOpt').addEventListener('click', e=>{ e.preventDefault(); row.remove(); });
+    }
+
+    function courseFromUI(){ return {
+      tool: qs('#tool').value,
+      title: qs('#tool').value==='custom' ? (qs('#title').value||'Egendefinert kurs') : qs('#tool option:checked').textContent,
+      yt: qs('#yt').value.trim(),
+      threshold: Number(qs('#threshold').value||90),
+      pass: Number(qs('#pass').value||80),
+      quiz: quizFromEditor()
+    }; }
+    function applyCourse(c){ if(!c) return; qs('#tool').value = c.tool||'custom'; qs('#customWrap').style.display = (c.tool==='custom')?'block':'none'; if(c.tool==='custom') qs('#title').value=c.title||''; qs('#yt').value=c.yt||''; qs('#threshold').value=c.threshold||90; qs('#pass').value=c.pass||80; buildQuizEditor(c.quiz||[]); }
+    function saveCourse(){ const data=getStore(); const c=courseFromUI(); let id = qs('#courseId').value || newId(); data[id]=c; setStore(data); alert('Kurs lagret: '+(c.title||id)); }
+    function loadCourse(){ const id=qs('#courseId').value; const data=getStore(); window.__loadedCourse = data[id]; applyCourse(data[id]); buildQuizFromLoaded(); }
+    function deleteCourse(){ const id=qs('#courseId').value; if(!id) return; const data=getStore(); delete data[id]; setStore(data); alert('Slettet.'); }
+    function exportCourseJSON(){ const id=qs('#courseId').value; const data=getStore(); const c=data[id]||courseFromUI(); const blob=new Blob([JSON.stringify(c,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(c.title||'kurs')+'.json'; a.click(); URL.revokeObjectURL(a.href); }
+    function importCourseJSON(){ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>{ const f=e.target.files[0]; const r=new FileReader(); r.onload=()=>{ try{ const c=JSON.parse(r.result); const data=getStore(); const id=newId(); data[id]=c; setStore(data); applyCourse(c); alert('Importert.'); }catch(err){ alert('Kunne ikke lese JSON.'); } }; r.readAsText(f); }; inp.click(); }
+    function copyShareLink(){ const c=courseFromUI(); const enc=btoa(unescape(encodeURIComponent(JSON.stringify(c)))); const url=location.href.split('#')[0].split('?')[0]+'#course='+enc; navigator.clipboard.writeText(url).then(()=>alert('Delingslenke kopiert.')); }
+
+    // ---------- AI-forslag (endepunkt eller lokal fallback) ----------
+    async function aiSuggestQuiz(){ const url=qs('#aiEndpoint').value.trim(); const transcript=qs('#transcript').value.trim(); if(!transcript){ alert('Lim inn transkript først.'); return; }
+      if(url){
+        try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'quiz_from_transcript', transcript})}); const data=await res.json(); if(Array.isArray(data.quiz)){ buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); } else { alert('Endepunkt returnerte ikke forventet format.'); } }catch(e){ alert('Klarte ikke hente AI‑forslag fra endepunkt.'); }
+      } else {
+        // Enkel lokal fallback: generer 5 ja/nei‑spørsmål basert på setninger
+        const sents = transcript.split(/[.!?\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
+        const quiz = sents.map((s,i)=>({ q: 'Stemmer dette: '+s+'?', a:['Ja','Nei'], c:0 }));
+        buildQuizEditor(quiz);
+        alert('Laget enkle forslag lokalt (uten AI-endepunkt).');
+      }
+    }
+
+    // ---------- Utsending ----------
+    function buildShareLink(){ const c=courseFromUI(); const enc=btoa(unescape(encodeURIComponent(JSON.stringify(c)))); return location.href.split('#')[0].split('?')[0]+'#course='+enc; }
+    async function sendInvites(){ const endpoint=qs('#emailEndpoint').value.trim(); const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); if(!emails.length){ alert('Ingen mottakere.'); return; } const link=buildShareLink();
+      if(endpoint){ try{ const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'send_invites', emails, link, course:courseFromUI(), message:qs('#inviteMsg').value||''})}); const data=await res.json(); alert(data.ok?'Sendt!':'Feil ved utsendelse'); }catch(e){ alert('Feil ved utsendelse'); } }
+      else { // fallback til mailto
+        mailtoFallback(emails, link);
+      }
+    }
+    function mailtoFallback(emails, link){ emails = emails || (qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); const c=courseFromUI(); const subj=encodeURIComponent('Kurs: '+(c.title||'opplæring')); const body=encodeURIComponent((qs('#inviteMsg').value||'Hei, du er tildelt kurs. Klikk lenken for å starte:')+"\n\n"+link);
+      const uri='mailto:'+emails.join(',')+'?subject='+subj+'&body='+body; window.location.href=uri; }
+
+    // ---------- Video/Quiz for deltaker ----------
+    let player, duration=0, seen=0, interval, threshold=0.9; let quizPct=0; let allowedAhead=3; // sekunder man kan ligge foran
+    const DEFAULT_QUIZ = {personlofter:[{q:'Må du alltid gjøre funksjonstest før bruk?',a:['Ja','Nei'],c:0},{q:'Hva gjør du ved vind over maks grense?',a:['Kjører roligere','Stopper og tar ned liften'],c:1},{q:'Må du bruke sele ved kurv?',a:['Avhenger av type','Ja, ved fare for utkast'],c:1}],truck:[{q:'Krever truck sertifisert opplæring (§10-3)?',a:['Nei','Ja'],c:1},{q:'Hva bestemmer maksimal last?',a:['Vekt og lastesenter','Dekktrykk'],c:0},{q:'Skal fotgjengerfelt respekteres?',a:['Ja','Nei'],c:0}],vinsj:[{q:'Skal du stå i lastlinjen?',a:['Ja','Nei'],c:1},{q:'Hva gjør du ved uvanlig lyd?',a:['Ignorerer','Stopper og sjekker'],c:1},{q:'Trenger hansker?',a:['Anbefalt','Påkrevd ved ståltau'],c:1}],kappesliper:[{q:'Skal vernedeksel være på?',a:['Valgfritt','Ja'],c:1},{q:'Briller og hørselvern?',a:['Ja','Nei'],c:0},{q:'Bytte blad mens plugget i?',a:['Ja','Nei'],c:1}],custom:[{q:'Har du lest bruksanvisningen?',a:['Ja','Nei'],c:0},{q:'Er relevante farer forstått?',a:['Ja','Nei'],c:0},{q:'Kan du stopp/nødprosedyre?',a:['Ja','Nei'],c:0}]};
+
+    function getActiveQuiz(key){ const loaded = window.__loadedCourse || null; if(loaded && Array.isArray(loaded.quiz) && loaded.quiz.length) return loaded.quiz; return DEFAULT_QUIZ[key]||DEFAULT_QUIZ.custom; }
+
+    function ytId(url){ if(!url) return ''; const m=url.match(/[?&]v=([^&#]+)/)||url.match(/youtu\.be\/([^?&#]+)/); return m?m[1]:''; }
+    function initVideo(){ const sel = (window.__loadedCourse?.tool) || qs('#tool').value; qs('#customWrap').style.display = sel==='custom' ? 'block':'none'; const url = (window.__loadedCourse?.yt) || qs('#yt').value.trim(); const id = ytId(url); if(!id){ alert('Fant ikke YouTube‑ID i lenken.'); return; }
+      const w = qs('#playerWrap'); w.innerHTML = '<div id="player"></div>';
+      if(!window.YT){ const tag=document.createElement('script'); tag.src='https://www.youtube.com/iframe_api'; document.body.appendChild(tag); window.onYouTubeIframeAPIReady=()=>createPlayer(id); } else { createPlayer(id); }
+      buildQuizFromLoaded(); updateGate();
+    }
+    function createPlayer(id){ player = new YT.Player('player',{videoId:id,playerVars:{rel:0,modestbranding:1,controls:1,disablekb:0},events:{ onReady:(e)=>{ duration=e.target.getDuration(); startTrack(); tryLockRate(); }, onStateChange:onPlayerStateChange, onPlaybackRateChange:tryLockRate }}); }
+    function tryLockRate(){ if(!player||!player.getPlaybackRate) return; const r=player.getPlaybackRate(); if(r>1.25){ try{ player.setPlaybackRate(1); }catch(e){} } }
+    function onPlayerStateChange(e){ if(e.data===1){ startTrack(); } }
+    function startTrack(){ clearInterval(interval); threshold=(Number((window.__loadedCourse?.threshold) || qs('#threshold').value||90)/100); allowedAhead=3; let lastTime=0; interval=setInterval(()=>{ if(!player||typeof player.getCurrentTime!=='function') return; const cur=player.getCurrentTime(); duration=Math.max(duration, player.getDuration());
+        // Anti-seek: hvis hopper for langt frem – dra tilbake
+        if(cur > seen + allowedAhead){ player.seekTo(seen + 0.5, true); return; }
+        if(cur < lastTime - 1){ player.seekTo(lastTime, true); return; }
+        // Oppdater sett tid
+        seen = Math.max(seen, cur);
+        lastTime = cur;
+        // Lås ned hastighet
+        tryLockRate();
+        const pct=duration?Math.min(100,(seen/duration)*100):0; qs('#pbar').style.width=pct.toFixed(1)+'%'; qs('#ptext').textContent=pct.toFixed(1)+' % sett'; updateGate();
+      }, 500);
+    }
+
+    function buildQuizFromLoaded(){ const k=(window.__loadedCourse?.tool)||qs('#tool').value; const q=getActiveQuiz(k); const wrap=qs('#quiz'); wrap.innerHTML=''; q.forEach((it,i)=>{ const div=document.createElement('div'); div.style.marginBottom='10px'; div.innerHTML=`<div>${i+1}. ${escapeHtml(it.q)}</div>`+it.a.map((opt,j)=>`<label style="display:block;margin-left:8px"><input type="radio" name="q${i}" value="${j}"> ${escapeHtml(opt)}</label>`).join(''); wrap.appendChild(div); }); qs('#qres').textContent=''; }
+
+    function gradeQuiz(){ const qsArr=getActiveQuiz((window.__loadedCourse?.tool)||qs('#tool').value); let ok=0; qsArr.forEach((it,i)=>{ const v=document.querySelector(`input[name=q${i}]:checked`); if(v && Number(v.value)===it.c) ok++; }); quizPct = qsArr.length? Math.round((ok/qsArr.length)*100):100; qs('#qres').textContent = `Score: ${ok}/${qsArr.length} (${quizPct}%)`; updateGate(); }
+
+    // Signatur
+    const sig = document.getElementById('sig'); const ctx = sig.getContext('2d'); let drawing=false, lastPt=null; sig.addEventListener('pointerdown',e=>{drawing=true; lastPt=[e.offsetX,e.offsetY]}); sig.addEventListener('pointermove',e=>{ if(!drawing) return; ctx.strokeStyle='#9fc3ff'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(lastPt[0],lastPt[1]); ctx.lineTo(e.offsetX,e.offsetY); ctx.stroke(); lastPt=[e.offsetX,e.offsetY];}); ['pointerup','pointerleave'].forEach(ev=>sig.addEventListener(ev,()=>drawing=false)); function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
+
+    function updateGate(){ const need = Number((window.__loadedCourse?.pass) || qs('#pass').value||80); const tNeed = Number((window.__loadedCourse?.threshold) || qs('#threshold').value||90); const pct = duration? Math.min(100,(seen/duration)*100):0; const okVideo=pct>=tNeed; const okQuiz=quizPct>=need; const okAck=qs('#ack').checked; const hasSig=!isCanvasBlank(sig); const open=okVideo&&okQuiz&&okAck&&hasSig; qs('#btnComplete').disabled=!open; qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`; }
+    function isCanvasBlank(c){ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; }
+
+    function completeAndGenerate(){ const name=(qs('#empName')||{value:''}).value||''; const id=(qs('#empId')||{value:''}).value||''; const mail=(qs('#email')||{value:''}).value||''; const c = window.__loadedCourse || courseFromUI(); const url=c.yt; const pct=duration? Math.min(100,(seen/duration)*100):0; const now=new Date().toISOString();
+      qs('#c_name').textContent=name||'—'; qs('#c_id').textContent=id||'—'; qs('#c_mail').textContent=mail||'—'; qs('#c_course').textContent=c.title; qs('#c_video').textContent=url; qs('#c_seen').textContent=pct.toFixed(1)+' %'; qs('#c_quiz').textContent=quizPct+' %'; qs('#c_time').textContent=now; qs('#certSub').textContent='Utstyrsspesifikk opplæring jf. Forskrift om utførelse av arbeid kap. 10 (§§10‑1–10‑4)'; qs('#c_sig').src=sig.toDataURL('image/png');
+      qs('#attest').style.display='block';
+      // Logg lokalt
+      const rec={name,id,mail,course:c.title,url,seen:pct.toFixed(1),quiz:quizPct,time:now}; if(storageOK()){ const arr=JSON.parse(localStorage.getItem('trainingLog')||'[]'); arr.push(rec); localStorage.setItem('trainingLog', JSON.stringify(arr)); }
+      // Valgfritt: post til endepunkt for logging
+      const endpoint=qs('#emailEndpoint').value.trim(); if(endpoint){ fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({fn:'log_completion', rec})}).catch(()=>{}); }
+      window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+    }
+
+    function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
+    function exportPDFCert(){ const cert=qs('#cert'); const opt={ margin:10, filename:'attest.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2 }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' } }; html2pdf().from(cert).set(opt).save(); }
+
+    // ---------- Hash‑import av kurs ----------
+    function loadFromHash(){ const hash=location.hash||''; const m=hash.match(/#course=(.+)$/); if(!m) return; try{ const json=decodeURIComponent(escape(atob(m[1]))); const c=JSON.parse(json); window.__loadedCourse=c; applyCourse(c); buildQuizFromLoaded(); }catch(e){ console.warn('Kunne ikke laste kurs fra hash'); } }
+
+    // ---------- Event bindings (klikk/inputs) ----------
+    document.addEventListener('DOMContentLoaded',()=>{
+      fillCourseSelect(); loadFromHash(); buildQuizEditor();
+      // admin
+      qs('#tool').addEventListener('change',()=>{ qs('#customWrap').style.display = qs('#tool').value==='custom' ? 'block':'none'; });
+      qs('#btnLoad').addEventListener('click', e=>{ e.preventDefault(); loadCourse(); });
+      qs('#btnDelete').addEventListener('click', e=>{ e.preventDefault(); deleteCourse(); });
+      qs('#btnExportCourse').addEventListener('click', e=>{ e.preventDefault(); exportCourseJSON(); });
+      qs('#btnImportCourse').addEventListener('click', e=>{ e.preventDefault(); importCourseJSON(); });
+      qs('#btnCopyLink').addEventListener('click', e=>{ e.preventDefault(); copyShareLink(); });
+      qs('#btnAddQ').addEventListener('click', e=>{ e.preventDefault(); addQuestion(); });
+      qs('#btnAISuggest').addEventListener('click', e=>{ e.preventDefault(); aiSuggestQuiz(); });
+      qs('#btnSaveCourse').addEventListener('click', e=>{ e.preventDefault(); saveCourse(); });
+      qs('#btnTest').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+      // utsending
+      qs('#btnSend').addEventListener('click', e=>{ e.preventDefault(); sendInvites(); });
+      qs('#btnMailto').addEventListener('click', e=>{ e.preventDefault(); mailtoFallback(); });
+      // deltaker
+      qs('#btnLoadVideo').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+      qs('#btnGrade').addEventListener('click', e=>{ e.preventDefault(); gradeQuiz(); });
+      qs('#ack').addEventListener('change', updateGate);
+      qs('#btnClearSig').addEventListener('click', e=>{ e.preventDefault(); clearSig(); });
+      qs('#btnComplete').addEventListener('click', e=>{ e.preventDefault(); completeAndGenerate(); });
+      // attest knapper
+      qs('#btnPrint').addEventListener('click', e=>{ e.preventDefault(); window.print(); });
+      qs('#btnPDF').addEventListener('click', e=>{ e.preventDefault(); exportPDFCert(); });
+      qs('#btnCSV').addEventListener('click', e=>{ e.preventDefault(); exportCSV(); });
+    });
+  </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opplæringsportal – Video + Quiz + Attest</title>
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#1f2937;--text:#e5e7eb;--acc:#22d3ee;--ok:#10b981;--warn:#f59e0b;--err:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(135deg,var(--bg),#0b122a);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    header{padding:20px;border-bottom:1px solid #263247;background:#0f172acc;backdrop-filter:blur(6px);position:sticky;top:0}
+    h1{margin:0;font-size:20px}
+    .container{display:grid;grid-template-columns:380px 1fr;gap:16px;padding:16px}
+    @media(max-width:1100px){.container{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,var(--card),#0b1222);border:1px solid #263247;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    .pad{padding:16px}
+    label{display:block;font-size:12px;margin-top:10px;opacity:.95}
+    input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3a55;background:#0b1222;color:var(--text)}
+    textarea{min-height:80px}
+    .btnbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    button{padding:10px 14px;border-radius:12px;border:1px solid #263247;background:#1d2840;color:#dbeafe;cursor:pointer}
+    button.primary{background:linear-gradient(180deg,var(--acc),#0ea5b7);border-color:transparent;color:#031f27;font-weight:600}
+    .muted{font-size:12px;opacity:.75}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .bar{height:10px;background:#0b1222;border:1px solid #263247;border-radius:999px;overflow:hidden}
+    .bar>div{height:100%;background:#22d3ee;width:0%}
+    .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+    #attest{background:white;color:#111;border-radius:12px}
+    #attest .a4{width:210mm;min-height:297mm;padding:18mm;margin:0 auto}
+    #attest h2{margin:0 0 6px 0}
+    #sig{border:1px dashed #3a4c70;border-radius:8px;height:140px;background:#0b1222}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .imglogo{height:30px}
+    @media print{header,.container>section:first-child{display:none!important} #attest{box-shadow:none} body{background:white}}
+    .note{font-size:12px;opacity:.85;padding:8px 10px;border:1px solid #2a3a55;border-radius:8px;background:#0b1222;margin-top:8px}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+  <header>
+    <h1>Opplæringsportal – Video + Quiz + Attest</h1>
+    <div class="muted">Se video → bestå quiz → bekreft & signer → generer attest (PDF) og logg</div>
+  </header>
+
+  <div class="container">
+    <!-- ADMIN / KURS-BYGGER + DELTAKERINFO -->
+    <section class="card pad">
+      <h2>Admin & kursbygger</h2>
+      <details open>
+        <summary><strong>Kurs-bibliotek</strong></summary>
+        <div class="row">
+          <div>
+            <label for="courseId">Velg lagret kurs</label>
+            <select id="courseId"></select>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <div class="btnbar">
+              <button id="btnLoad">Last</button>
+              <button id="btnDelete">Slett</button>
+            </div>
+          </div>
+        </div>
+        <div class="btnbar">
+          <button id="btnExportCourse">Eksporter kurs (JSON)</button>
+          <button id="btnImportCourse">Importer kurs (JSON)</button>
+          <button id="btnCopyLink">Kopier delingslenke</button>
+        </div>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <details open>
+        <summary><strong>Lag / rediger kurs</strong></summary>
+        <label for="tool">Utstyr/verktøy</label>
+        <select id="tool">
+          <option value="personlofter">Personløfter – grunnleggende bruk</option>
+          <option value="truck">Motvektstruck – sikker bruk</option>
+          <option value="vinsj">Vinsj – sikker betjening</option>
+          <option value="kappesliper">Kapp- og gjærsag – verneutstyr og bruk</option>
+          <option value="custom">Egendefinert …</option>
+        </select>
+        <div id="customWrap" style="display:none">
+          <label for="title">Egendefinert tittel</label>
+          <input id="title" placeholder="F.eks. Borskrutrekker – modell X" />
+        </div>
+        <label for="yt">YouTube‑URL (eller delingslenke)</label>
+        <input id="yt" placeholder="https://www.youtube.com/watch?v=VIDEO_ID" />
+        <div class="row">
+          <div>
+            <label for="threshold">Krav til sett prosent</label>
+            <input id="threshold" type="number" min="0" max="100" value="90" />
+          </div>
+          <div>
+            <label for="pass">Krav til riktig på quiz (%)</label>
+            <input id="pass" type="number" min="0" max="100" value="80" />
+          </div>
+        </div>
+        <div class="note">Tips: Lim inn transkript fra video for å få AI-forslag til spørsmål, eller bygg manuelt.</div>
+        <h3 style="margin-top:10px">Quiz-redigerer</h3>
+        <div id="quizEditor"></div>
+        <div class="btnbar">
+          <button id="btnAddQ">+ Legg til spørsmål</button>
+          <button id="btnAISuggest">AI: foreslå spørsmål fra transkript</button>
+        </div>
+        <label for="transcript" class="muted">(Valgfritt) Lim inn transkript/innhold fra video</label>
+        <textarea id="transcript" placeholder="Lim inn transkript/innhold…"></textarea>
+        <div class="btnbar">
+          <button class="primary" id="btnSaveCourse">Lagre kurs</button>
+          <button id="btnTest">Test video + quiz</button>
+        </div>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <details>
+        <summary><strong>Utsending & integrasjoner</strong></summary>
+        <label for="inviteList">Mottakere (kommaseparerte e‑poster)</label>
+        <textarea id="inviteList" placeholder="ola@example.no, kari@example.no"></textarea>
+        <label for="inviteMsg">Melding til e‑post</label>
+        <textarea id="inviteMsg" placeholder="Hei! Du er tildelt kurs: … Klikk lenken for å starte."></textarea>
+        <label for="emailEndpoint">(Valgfritt) E‑post‑endepunkt (POST) for utsending/logg</label>
+        <input id="emailEndpoint" placeholder="https://script.google.com/macros/s/…/exec" />
+        <label for="aiEndpoint">(Valgfritt) AI‑endepunkt (POST) for quizgenerering</label>
+        <input id="aiEndpoint" placeholder="https://script.google.com/macros/s/…/exec" />
+        <div class="btnbar">
+          <button id="btnSend">Send invitasjoner</button>
+          <button id="btnMailto">Åpne e‑postklient</button>
+        </div>
+        <p class="muted">Uten endepunkt brukes mailto‑fallback automatisk. Med endepunkt kan du masseutsende og logge i f.eks. Google Sheet.</p>
+      </details>
+
+      <div class="hr" style="height:1px;background:#263247;margin:12px 0"></div>
+
+      <h3>Deltaker</h3>
+      <label for="empName">Navn</label>
+      <input id="empName" />
+      <div class="grid2">
+        <div>
+          <label for="empId">Ansattnr / ID</label>
+          <input id="empId" />
+        </div>
+        <div>
+          <label for="email">E‑post</label>
+          <input id="email" type="email" />
+        </div>
+      </div>
+      <div class="btnbar"><button class="primary" id="btnLoadVideo">Last video</button></div>
+      <p class="muted">Bruk YouTube (unlisted) eller erstatt med Vimeo/lokal fil senere.</p>
+    </section>
+
+    <!-- KURSDELTAKER – video, quiz, bekreftelse og attest -->
+    <section>
+      <div class="card pad">
+        <h3>Video</h3>
+        <div id="playerWrap" style="aspect-ratio:16/9;background:#0b1222;border:1px solid #263247;border-radius:12px;display:grid;place-items:center;color:#89a3d1">
+          <div>Velg/lagre kurs og trykk «Last video»</div>
+        </div>
+        <label style="margin-top:12px">Progresjon video</label>
+        <div class="bar"><div id="pbar"></div></div>
+        <div class="muted" id="ptext">0 % sett</div>
+        <div class="note">Anti-juks: hopping fremover blir avvist og avspillingshastighet >1.25x låses.
+        </div>
+      </div>
+
+      <div class="card pad" style="margin-top:12px">
+        <h3>Quiz</h3>
+        <div id="quiz"></div>
+        <div class="btnbar"><button id="btnGrade">Sjekk svar</button><span id="qres" class="muted"></span></div>
+      </div>
+
+      <div class="card pad" style="margin-top:12px">
+        <h3>Bekreftelse og signatur</h3>
+        <label><input type="checkbox" id="ack" /> Jeg bekrefter at jeg har sett videoen og gjennomgått opplæringen.</label>
+        <label for="sig">Signer i feltet under</label>
+        <canvas id="sig" width="900" height="260"></canvas>
+        <div class="btnbar">
+          <button id="btnClearSig">Tøm signatur</button>
+          <button class="primary" id="btnComplete" disabled>Bekreft opplæring og lag attest</button>
+          <span class="muted" id="gateTxt">Lås opp: 1) se video ≥ krav, 2) bestå quiz ≥ krav, 3) kryss av og signer</span>
+        </div>
+      </div>
+
+      <div id="attest" class="card pad" style="margin-top:12px;display:none">
+        <div class="a4" id="cert">
+          <div class="row" style="align-items:center">
+            <div><h2>Attest for gjennomført utstyrsspesifikk opplæring</h2><div id="certSub" style="opacity:.8"></div></div>
+            <div style="text-align:right"><img class="imglogo" alt="Logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='50'%3E%3Crect width='200' height='50' rx='8' fill='%230ea5b7'/%3E%3Ctext x='100' y='32' fill='white' font-size='20' text-anchor='middle' font-family='Arial'%3EOPPL%C3%86RING%3C/text%3E%3C/svg%3E"></div>
+          </div>
+          <hr>
+          <p><strong>Deltaker:</strong> <span id="c_name"></span> &nbsp; <strong>ID:</strong> <span id="c_id"></span> &nbsp; <strong>E‑post:</strong> <span id="c_mail"></span></p>
+          <p><strong>Kurs:</strong> <span id="c_course"></span></p>
+          <p><strong>Video:</strong> <span id="c_video"></span></p>
+          <div class="grid2">
+            <div>
+              <p><strong>Video sett:</strong> <span id="c_seen"></span></p>
+              <p><strong>Quiz resultat:</strong> <span id="c_quiz"></span></p>
+              <p><strong>Dato/Tid (UTC):</strong> <span id="c_time"></span></p>
+            </div>
+            <div>
+              <p><strong>Bekreftelse:</strong> Deltaker har bekreftet at opplæringen er gjennomført og forstått.</p>
+              <p><strong>Henvisning:</strong> Forskrift om utførelse av arbeid kap. 10 (§§10‑1, 10‑2, 10‑3, 10‑4).</p>
+            </div>
+          </div>
+          <div class="row" style="margin-top:16px">
+            <div>
+              <p><strong>Signatur deltaker:</strong></p>
+              <img id="c_sig" alt="Signatur" style="max-width:100%;border:1px solid #ddd" />
+            </div>
+            <div>
+              <p><strong>Signatur instruktør (valgfri):</strong></p>
+              <div style="height:80px;border-bottom:1px solid #aaa"></div>
+            </div>
+          </div>
+          <p style="margin-top:16px;font-size:12px;opacity:.8">Oppbevar denne dokumentasjonen iht. virksomhetens HMS‑rutiner. Lagres gjerne sammen med risikovurdering, kursbevis og sjekklister.</p>
+        </div>
+        <div class="btnbar" style="margin-top:10px">
+          <button id="btnPrint">Skriv ut / Lagre som PDF</button>
+          <button id="btnPDF">Direkte PDF‑eksport</button>
+          <button id="btnCSV">Eksporter logg (CSV)</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- SCRIPT -->
+  <script>
+    // ---------- Hjelpefunksjoner ----------
+    const qs = s=>document.querySelector(s);
+    const qsa = s=>Array.from(document.querySelectorAll(s));
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+    function storageOK(){ try{ localStorage.setItem('_t','1'); localStorage.removeItem('_t'); return true; }catch(e){ return false; } }
+
+    // ---------- Kurs-bibliotek (localStorage + delingslenke) ----------
+    function getStore(){ return storageOK()? JSON.parse(localStorage.getItem('courses')||'{}') : {}; }
+    function setStore(obj){ if(storageOK()){ localStorage.setItem('courses', JSON.stringify(obj)); fillCourseSelect(); } }
+    function fillCourseSelect(){ const sel=qs('#courseId'); if(!sel) return; const data=getStore(); sel.innerHTML=''; Object.keys(data).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=data[id].title||id; sel.appendChild(o); }); }
+    function newId(){ return 'c_'+Math.random().toString(36).slice(2,10); }
+
+    function quizFromEditor(){ const list=[]; qsa('#quizEditor>div.qitem').forEach(qd=>{ const q=qd.querySelector('.qtext').value; const a=[...qd.querySelectorAll('.opt')].map(o=>o.value); const radios=[...qd.querySelectorAll('input[type=radio]')]; const c=radios.findIndex(r=>r.checked); list.push({q,a,c:Math.max(0,c)}); }); return list; }
+
+    function buildQuizEditor(qsList){ const wrap=qs('#quizEditor'); wrap.innerHTML=''; const arr = (qsList && qsList.length)? qsList : [{q:'',a:['',''],c:0}]; arr.forEach(addQuestion);
+    }
+    function addQuestion(it){ it=it||{q:'',a:['',''],c:0}; const wrap=qs('#quizEditor'); const div=document.createElement('div'); div.className='qitem'; div.style.border='1px solid #263247'; div.style.borderRadius='8px'; div.style.padding='10px'; div.style.marginTop='8px';
+      div.innerHTML = `
+        <label>Spørsmål</label>
+        <input class="qtext" value="${escapeHtml(it.q)}" />
+        <label>Svaralternativer (merk riktig)</label>
+        <div class="opts"></div>
+        <div class="btnbar">
+          <button class="btnAddOpt">+ Alternativ</button>
+          <button class="btnDelQ">Slett spørsmål</button>
+        </div>`;
+      wrap.appendChild(div);
+      const opts=div.querySelector('.opts');
+      const group='r'+Math.random().toString(36).slice(2,7);
+      (it.a||['','']).forEach((opt,idx)=> addOpt(div, group, opt, idx===it.c));
+      div.querySelector('.btnAddOpt').addEventListener('click', e=>{ e.preventDefault(); addOpt(div, group, '', false); });
+      div.querySelector('.btnDelQ').addEventListener('click', e=>{ e.preventDefault(); div.remove(); });
+    }
+    function addOpt(qDiv, group, text='', correct=false){ const opts=qDiv.querySelector('.opts'); const row=document.createElement('div'); row.style.display='grid'; row.style.gridTemplateColumns='24px 1fr 80px'; row.style.gap='8px'; row.style.alignItems='center'; row.style.marginTop='6px';
+      row.innerHTML=`<input type="radio" name="${group}" ${correct?'checked':''}>
+                     <input class="opt" value="${escapeHtml(text)}" placeholder="Svaralternativ" />
+                     <button class="btnRemOpt">Fjern</button>`;
+      opts.appendChild(row);
+      row.querySelector('.btnRemOpt').addEventListener('click', e=>{ e.preventDefault(); row.remove(); });
+    }
+
+    function courseFromUI(){ return {
+      tool: qs('#tool').value,
+      title: qs('#tool').value==='custom' ? (qs('#title').value||'Egendefinert kurs') : qs('#tool option:checked').textContent,
+      yt: qs('#yt').value.trim(),
+      threshold: Number(qs('#threshold').value||90),
+      pass: Number(qs('#pass').value||80),
+      quiz: quizFromEditor()
+    }; }
+    function applyCourse(c){ if(!c) return; qs('#tool').value = c.tool||'custom'; qs('#customWrap').style.display = (c.tool==='custom')?'block':'none'; if(c.tool==='custom') qs('#title').value=c.title||''; qs('#yt').value=c.yt||''; qs('#threshold').value=c.threshold||90; qs('#pass').value=c.pass||80; buildQuizEditor(c.quiz||[]); }
+    function saveCourse(){ const data=getStore(); const c=courseFromUI(); let id = qs('#courseId').value || newId(); data[id]=c; setStore(data); alert('Kurs lagret: '+(c.title||id)); }
+    function loadCourse(){ const id=qs('#courseId').value; const data=getStore(); window.__loadedCourse = data[id]; applyCourse(data[id]); buildQuizFromLoaded(); }
+    function deleteCourse(){ const id=qs('#courseId').value; if(!id) return; const data=getStore(); delete data[id]; setStore(data); alert('Slettet.'); }
+    function exportCourseJSON(){ const id=qs('#courseId').value; const data=getStore(); const c=data[id]||courseFromUI(); const blob=new Blob([JSON.stringify(c,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(c.title||'kurs')+'.json'; a.click(); URL.revokeObjectURL(a.href); }
+    function importCourseJSON(){ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>{ const f=e.target.files[0]; const r=new FileReader(); r.onload=()=>{ try{ const c=JSON.parse(r.result); const data=getStore(); const id=newId(); data[id]=c; setStore(data); applyCourse(c); alert('Importert.'); }catch(err){ alert('Kunne ikke lese JSON.'); } }; r.readAsText(f); }; inp.click(); }
+    function copyShareLink(){ const c=courseFromUI(); const enc=btoa(unescape(encodeURIComponent(JSON.stringify(c)))); const url=location.href.split('#')[0].split('?')[0]+'#course='+enc; navigator.clipboard.writeText(url).then(()=>alert('Delingslenke kopiert.')); }
+
+    // ---------- AI-forslag (endepunkt eller lokal fallback) ----------
+    async function aiSuggestQuiz(){ const url=qs('#aiEndpoint').value.trim(); const transcript=qs('#transcript').value.trim(); if(!transcript){ alert('Lim inn transkript først.'); return; }
+      if(url){
+        try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'quiz_from_transcript', transcript})}); const data=await res.json(); if(Array.isArray(data.quiz)){ buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); } else { alert('Endepunkt returnerte ikke forventet format.'); } }catch(e){ alert('Klarte ikke hente AI‑forslag fra endepunkt.'); }
+      } else {
+        // Enkel lokal fallback: generer 5 ja/nei‑spørsmål basert på setninger
+        const sents = transcript.split(/[.!?\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
+        const quiz = sents.map((s,i)=>({ q: 'Stemmer dette: '+s+'?', a:['Ja','Nei'], c:0 }));
+        buildQuizEditor(quiz);
+        alert('Laget enkle forslag lokalt (uten AI-endepunkt).');
+      }
+    }
+
+    // ---------- Utsending ----------
+    function buildShareLink(){ const c=courseFromUI(); const enc=btoa(unescape(encodeURIComponent(JSON.stringify(c)))); return location.href.split('#')[0].split('?')[0]+'#course='+enc; }
+    async function sendInvites(){ const endpoint=qs('#emailEndpoint').value.trim(); const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); if(!emails.length){ alert('Ingen mottakere.'); return; } const link=buildShareLink();
+      if(endpoint){ try{ const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'send_invites', emails, link, course:courseFromUI(), message:qs('#inviteMsg').value||''})}); const data=await res.json(); alert(data.ok?'Sendt!':'Feil ved utsendelse'); }catch(e){ alert('Feil ved utsendelse'); } }
+      else { // fallback til mailto
+        mailtoFallback(emails, link);
+      }
+    }
+    function mailtoFallback(emails, link){ emails = emails || (qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); const c=courseFromUI(); const subj=encodeURIComponent('Kurs: '+(c.title||'opplæring')); const body=encodeURIComponent((qs('#inviteMsg').value||'Hei, du er tildelt kurs. Klikk lenken for å starte:')+"\n\n"+link);
+      const uri='mailto:'+emails.join(',')+'?subject='+subj+'&body='+body; window.location.href=uri; }
+
+    // ---------- Video/Quiz for deltaker ----------
+    let player, duration=0, seen=0, interval, threshold=0.9; let quizPct=0; let allowedAhead=3; // sekunder man kan ligge foran
+    const DEFAULT_QUIZ = {personlofter:[{q:'Må du alltid gjøre funksjonstest før bruk?',a:['Ja','Nei'],c:0},{q:'Hva gjør du ved vind over maks grense?',a:['Kjører roligere','Stopper og tar ned liften'],c:1},{q:'Må du bruke sele ved kurv?',a:['Avhenger av type','Ja, ved fare for utkast'],c:1}],truck:[{q:'Krever truck sertifisert opplæring (§10-3)?',a:['Nei','Ja'],c:1},{q:'Hva bestemmer maksimal last?',a:['Vekt og lastesenter','Dekktrykk'],c:0},{q:'Skal fotgjengerfelt respekteres?',a:['Ja','Nei'],c:0}],vinsj:[{q:'Skal du stå i lastlinjen?',a:['Ja','Nei'],c:1},{q:'Hva gjør du ved uvanlig lyd?',a:['Ignorerer','Stopper og sjekker'],c:1},{q:'Trenger hansker?',a:['Anbefalt','Påkrevd ved ståltau'],c:1}],kappesliper:[{q:'Skal vernedeksel være på?',a:['Valgfritt','Ja'],c:1},{q:'Briller og hørselvern?',a:['Ja','Nei'],c:0},{q:'Bytte blad mens plugget i?',a:['Ja','Nei'],c:1}],custom:[{q:'Har du lest bruksanvisningen?',a:['Ja','Nei'],c:0},{q:'Er relevante farer forstått?',a:['Ja','Nei'],c:0},{q:'Kan du stopp/nødprosedyre?',a:['Ja','Nei'],c:0}]};
+
+    function getActiveQuiz(key){ const loaded = window.__loadedCourse || null; if(loaded && Array.isArray(loaded.quiz) && loaded.quiz.length) return loaded.quiz; return DEFAULT_QUIZ[key]||DEFAULT_QUIZ.custom; }
+
+    function ytId(url){ if(!url) return ''; const m=url.match(/[?&]v=([^&#]+)/)||url.match(/youtu\.be\/([^?&#]+)/); return m?m[1]:''; }
+    function initVideo(){ const sel = (window.__loadedCourse?.tool) || qs('#tool').value; qs('#customWrap').style.display = sel==='custom' ? 'block':'none'; const url = (window.__loadedCourse?.yt) || qs('#yt').value.trim(); const id = ytId(url); if(!id){ alert('Fant ikke YouTube‑ID i lenken.'); return; }
+      const w = qs('#playerWrap'); w.innerHTML = '<div id="player"></div>';
+      if(!window.YT){ const tag=document.createElement('script'); tag.src='https://www.youtube.com/iframe_api'; document.body.appendChild(tag); window.onYouTubeIframeAPIReady=()=>createPlayer(id); } else { createPlayer(id); }
+      buildQuizFromLoaded(); updateGate();
+    }
+    function createPlayer(id){ player = new YT.Player('player',{videoId:id,playerVars:{rel:0,modestbranding:1,controls:1,disablekb:0},events:{ onReady:(e)=>{ duration=e.target.getDuration(); startTrack(); tryLockRate(); }, onStateChange:onPlayerStateChange, onPlaybackRateChange:tryLockRate }}); }
+    function tryLockRate(){ if(!player||!player.getPlaybackRate) return; const r=player.getPlaybackRate(); if(r>1.25){ try{ player.setPlaybackRate(1); }catch(e){} } }
+    function onPlayerStateChange(e){ if(e.data===1){ startTrack(); } }
+    function startTrack(){ clearInterval(interval); threshold=(Number((window.__loadedCourse?.threshold) || qs('#threshold').value||90)/100); allowedAhead=3; let lastTime=0; interval=setInterval(()=>{ if(!player||typeof player.getCurrentTime!=='function') return; const cur=player.getCurrentTime(); duration=Math.max(duration, player.getDuration());
+        // Anti-seek: hvis hopper for langt frem – dra tilbake
+        if(cur > seen + allowedAhead){ player.seekTo(seen + 0.5, true); return; }
+        if(cur < lastTime - 1){ player.seekTo(lastTime, true); return; }
+        // Oppdater sett tid
+        seen = Math.max(seen, cur);
+        lastTime = cur;
+        // Lås ned hastighet
+        tryLockRate();
+        const pct=duration?Math.min(100,(seen/duration)*100):0; qs('#pbar').style.width=pct.toFixed(1)+'%'; qs('#ptext').textContent=pct.toFixed(1)+' % sett'; updateGate();
+      }, 500);
+    }
+
+    function buildQuizFromLoaded(){ const k=(window.__loadedCourse?.tool)||qs('#tool').value; const q=getActiveQuiz(k); const wrap=qs('#quiz'); wrap.innerHTML=''; q.forEach((it,i)=>{ const div=document.createElement('div'); div.style.marginBottom='10px'; div.innerHTML=`<div>${i+1}. ${escapeHtml(it.q)}</div>`+it.a.map((opt,j)=>`<label style="display:block;margin-left:8px"><input type="radio" name="q${i}" value="${j}"> ${escapeHtml(opt)}</label>`).join(''); wrap.appendChild(div); }); qs('#qres').textContent=''; }
+
+    function gradeQuiz(){ const qsArr=getActiveQuiz((window.__loadedCourse?.tool)||qs('#tool').value); let ok=0; qsArr.forEach((it,i)=>{ const v=document.querySelector(`input[name=q${i}]:checked`); if(v && Number(v.value)===it.c) ok++; }); quizPct = qsArr.length? Math.round((ok/qsArr.length)*100):100; qs('#qres').textContent = `Score: ${ok}/${qsArr.length} (${quizPct}%)`; updateGate(); }
+
+    // Signatur
+    const sig = document.getElementById('sig'); const ctx = sig.getContext('2d'); let drawing=false, lastPt=null; sig.addEventListener('pointerdown',e=>{drawing=true; lastPt=[e.offsetX,e.offsetY]}); sig.addEventListener('pointermove',e=>{ if(!drawing) return; ctx.strokeStyle='#9fc3ff'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(lastPt[0],lastPt[1]); ctx.lineTo(e.offsetX,e.offsetY); ctx.stroke(); lastPt=[e.offsetX,e.offsetY];}); ['pointerup','pointerleave'].forEach(ev=>sig.addEventListener(ev,()=>drawing=false)); function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
+
+    function updateGate(){ const need = Number((window.__loadedCourse?.pass) || qs('#pass').value||80); const tNeed = Number((window.__loadedCourse?.threshold) || qs('#threshold').value||90); const pct = duration? Math.min(100,(seen/duration)*100):0; const okVideo=pct>=tNeed; const okQuiz=quizPct>=need; const okAck=qs('#ack').checked; const hasSig=!isCanvasBlank(sig); const open=okVideo&&okQuiz&&okAck&&hasSig; qs('#btnComplete').disabled=!open; qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`; }
+    function isCanvasBlank(c){ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; }
+
+    function completeAndGenerate(){ const name=(qs('#empName')||{value:''}).value||''; const id=(qs('#empId')||{value:''}).value||''; const mail=(qs('#email')||{value:''}).value||''; const c = window.__loadedCourse || courseFromUI(); const url=c.yt; const pct=duration? Math.min(100,(seen/duration)*100):0; const now=new Date().toISOString();
+      qs('#c_name').textContent=name||'—'; qs('#c_id').textContent=id||'—'; qs('#c_mail').textContent=mail||'—'; qs('#c_course').textContent=c.title; qs('#c_video').textContent=url; qs('#c_seen').textContent=pct.toFixed(1)+' %'; qs('#c_quiz').textContent=quizPct+' %'; qs('#c_time').textContent=now; qs('#certSub').textContent='Utstyrsspesifikk opplæring jf. Forskrift om utførelse av arbeid kap. 10 (§§10‑1–10‑4)'; qs('#c_sig').src=sig.toDataURL('image/png');
+      qs('#attest').style.display='block';
+      // Logg lokalt
+      const rec={name,id,mail,course:c.title,url,seen:pct.toFixed(1),quiz:quizPct,time:now}; if(storageOK()){ const arr=JSON.parse(localStorage.getItem('trainingLog')||'[]'); arr.push(rec); localStorage.setItem('trainingLog', JSON.stringify(arr)); }
+      // Valgfritt: post til endepunkt for logging
+      const endpoint=qs('#emailEndpoint').value.trim(); if(endpoint){ fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({fn:'log_completion', rec})}).catch(()=>{}); }
+      window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+    }
+
+    function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
+    function exportPDFCert(){ const cert=qs('#cert'); const opt={ margin:10, filename:'attest.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2 }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' } }; html2pdf().from(cert).set(opt).save(); }
+
+    // ---------- Hash‑import av kurs ----------
+    function loadFromHash(){ const hash=location.hash||''; const m=hash.match(/#course=(.+)$/); if(!m) return; try{ const json=decodeURIComponent(escape(atob(m[1]))); const c=JSON.parse(json); window.__loadedCourse=c; applyCourse(c); buildQuizFromLoaded(); }catch(e){ console.warn('Kunne ikke laste kurs fra hash'); } }
+
+    // ---------- Event bindings (klikk/inputs) ----------
+    document.addEventListener('DOMContentLoaded',()=>{
+      fillCourseSelect(); loadFromHash(); buildQuizEditor();
+      // admin
+      qs('#tool').addEventListener('change',()=>{ qs('#customWrap').style.display = qs('#tool').value==='custom' ? 'block':'none'; });
+      qs('#btnLoad').addEventListener('click', e=>{ e.preventDefault(); loadCourse(); });
+      qs('#btnDelete').addEventListener('click', e=>{ e.preventDefault(); deleteCourse(); });
+      qs('#btnExportCourse').addEventListener('click', e=>{ e.preventDefault(); exportCourseJSON(); });
+      qs('#btnImportCourse').addEventListener('click', e=>{ e.preventDefault(); importCourseJSON(); });
+      qs('#btnCopyLink').addEventListener('click', e=>{ e.preventDefault(); copyShareLink(); });
+      qs('#btnAddQ').addEventListener('click', e=>{ e.preventDefault(); addQuestion(); });
+      qs('#btnAISuggest').addEventListener('click', e=>{ e.preventDefault(); aiSuggestQuiz(); });
+      qs('#btnSaveCourse').addEventListener('click', e=>{ e.preventDefault(); saveCourse(); });
+      qs('#btnTest').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+      // utsending
+      qs('#btnSend').addEventListener('click', e=>{ e.preventDefault(); sendInvites(); });
+      qs('#btnMailto').addEventListener('click', e=>{ e.preventDefault(); mailtoFallback(); });
+      // deltaker
+      qs('#btnLoadVideo').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+      qs('#btnGrade').addEventListener('click', e=>{ e.preventDefault(); gradeQuiz(); });
+      qs('#ack').addEventListener('change', updateGate);
+      qs('#btnClearSig').addEventListener('click', e=>{ e.preventDefault(); clearSig(); });
+      qs('#btnComplete').addEventListener('click', e=>{ e.preventDefault(); completeAndGenerate(); });
+      // attest knapper
+      qs('#btnPrint').addEventListener('click', e=>{ e.preventDefault(); window.print(); });
+      qs('#btnPDF').addEventListener('click', e=>{ e.preventDefault(); exportPDFCert(); });
+      qs('#btnCSV').addEventListener('click', e=>{ e.preventDefault(); exportCSV(); });
+    });
+  </script>
+</body>
+</html>
