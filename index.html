@@ -84,6 +84,11 @@ body.pdf-mode header {
   backdrop-filter: none !important; 
   background:#0f172a !important; 
 }
+/* Skarp, mørk tekst i PDF */
+#cert, #cert * { color:#000 !important; }
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 
   </style>
 
@@ -840,22 +845,28 @@ async function exportPDFCert(){
   const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
 
   try{
-    await html2pdf()
-      .from(cert)
-      .set({
-        margin: 10,
-        filename: `${name}_${course}_${dt}.pdf`,
-        image: { type:'jpeg', quality:0.98 },
-        html2canvas: {
-          scale: isIOS() ? 1 : 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          scrollY: 0
-        },
-        jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-      })
-      .save();
+await html2pdf()
+  .from(cert)
+  .set({
+    margin: 10,
+    filename: `${name}_${course}_${dt}.pdf`,
+    // ① PNG bevarer skarp tekst
+    image: { type:'png', quality:1 },
+
+    // ② Høyere scale gir skarpere resultat (men lavere på iOS for stabilitet)
+    html2canvas: {
+      scale: isIOS() ? 1.5 : 3,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      letterRendering: true,   // ③ gir litt fyldigere glyphs
+      scrollY: 0
+    },
+
+    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+  })
+  .save();
+
   } finally {
     document.body.classList.remove('pdf-mode');
   }
@@ -956,6 +967,7 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
 
 
