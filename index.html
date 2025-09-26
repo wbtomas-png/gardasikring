@@ -27,6 +27,8 @@
     .bar>div{height:100%;background:#22d3ee;width:0%}
     .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
     #attest{background:white;color:#111;border-radius:12px}
+    #cert { background:#ffffff; }
+
  /* Attest: responsiv visning på mobil */
 #attest { overflow:auto; }
 #attest .a4 {
@@ -311,8 +313,11 @@ body.learner .admin-only { display:none !important; }
       // === Faste standardlenker ===
   const DEFAULT_BACKEND = 'https://script.google.com/macros/s/AKfycbzYlj2XoarcI9rbsKwRw1OVKpqr929WRSULmcr8O3czHGqt837uRClxn5yLR3sEtLzE/exec';
   const DEFAULT_BASE    = 'https://wbtomas-png.github.io/gardasikring/';
-    // Alias til jsPDF-klassen inne i html2pdf-bundlen
+// Alias til jsPDF-klassen i html2pdf.bundle
 const _JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+// (valgfritt, men nyttig) eksponer også som window.jsPDF for tredjepartskall:
+if (!_JsPDF && window.jspdf && window.jspdf.jsPDF) { window.jsPDF = window.jspdf.jsPDF; }
+
 
     // ---------- Hjelpere ----------
     const qs = s=>document.querySelector(s);
@@ -683,10 +688,53 @@ async function exportPDFCert(){
     await new Promise(r => requestAnimationFrame(r));
   }
 
+  // Inline alle bilder (logo/signatur) for å unngå CORS/blank PDF
+  await ensureInlineImages(cert);
+
+  const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+
+  // Bruk html2pdf sin egen pipeline (inkl. html2canvas + jsPDF)
+  const opt = {
+    margin:       10, // mm
+    filename:     `${name}_${course}_${dt}.pdf`,
+    image:        { type:'jpeg', quality:0.98 },
+    html2canvas:  { scale: 2, useCORS: true, logging: false, backgroundColor:'#ffffff' },
+    jsPDF:        { unit:'mm', format:'a4', orientation:'portrait' }
+  };
+
+  // “Page fit”: gi .a4 en fast bredde under generering
+  const prevWidth = cert.style.width;
+  cert.style.width = '210mm';
+  try{
+    await html2pdf().from(cert).set(opt).save();
+  } finally {
+    cert.style.width = prevWidth; // rydd opp
+  }
+}
+
+
   // Inline alle bilder (logo etc.) for å unngå CORS/blank canvas
   await ensureInlineImages(cert);
   await new Promise(r => setTimeout(r, 50));
 
+if (!window.html2canvas) {
+  // Fallback: bruk html2pdf sin egen pipeline
+  const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  await ensureInlineImages(qs('#cert'));
+  return html2pdf().from(qs('#cert')).set({
+    margin: 10,
+    filename: `${name}_${course}_${dt}.pdf`,
+    image: { type:'jpeg', quality:0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
+    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+  }).save();
+}
+
+  
   // Render attesten til canvas
   const canvas = await html2canvas(cert, {
     scale: 2,
@@ -701,8 +749,9 @@ async function exportPDFCert(){
   });
 
   const imgData = canvas.toDataURL('image/jpeg', 0.98);
- if (!_JsPDF) { alert('jsPDF mangler – biblioteket ble ikke lastet.'); return; }
+if (!_JsPDF) { alert('jsPDF mangler – biblioteket ble ikke lastet.'); return; }
 const pdf = new _JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
 
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
@@ -730,6 +779,20 @@ const pdf = new _JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   pdf.save(`${name}_${course}_${dt}.pdf`);
 }
 
+function exportCSV(){
+  const arr = storageOK() ? JSON.parse(localStorage.getItem('trainingLog')||'[]') : [];
+  if(!arr.length){ alert('Ingen logger ennå.'); return; }
+  const cols = ['cid','uid','name','id','mail','course','url','seen','quiz','time'];
+  const csv = [cols.join(';')]
+    .concat(arr.map(o => cols.map(k => `"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';')))
+    .join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'opplaering_logg.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 
     // ---------- URL-parametre + learner-modus ----------
@@ -817,6 +880,7 @@ if (qs('#baseUrl')) {
   </script>
 </body>
 </html>
+
 
 
 
