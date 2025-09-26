@@ -311,6 +311,9 @@ body.learner .admin-only { display:none !important; }
       // === Faste standardlenker ===
   const DEFAULT_BACKEND = 'https://script.google.com/macros/s/AKfycbzYlj2XoarcI9rbsKwRw1OVKpqr929WRSULmcr8O3czHGqt837uRClxn5yLR3sEtLzE/exec';
   const DEFAULT_BASE    = 'https://wbtomas-png.github.io/gardasikring/';
+    // Alias til jsPDF-klassen inne i html2pdf-bundlen
+const _JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+
     // ---------- Hjelpere ----------
     const qs = s=>document.querySelector(s);
     const qsa = s=>Array.from(document.querySelectorAll(s));
@@ -698,7 +701,9 @@ async function exportPDFCert(){
   });
 
   const imgData = canvas.toDataURL('image/jpeg', 0.98);
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+ if (!_JsPDF) { alert('jsPDF mangler – biblioteket ble ikke lastet.'); return; }
+const pdf = new _JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
 
@@ -812,6 +817,7 @@ if (qs('#baseUrl')) {
   </script>
 </body>
 </html>
+
 
 
 
