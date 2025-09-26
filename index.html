@@ -39,9 +39,52 @@
     .banner{margin:12px 16px 0;padding:10px 12px;border:1px dashed #3a4c70;border-radius:10px;background:#0b1222;font-size:12px}
     /* Skjul backend-utsending (vi sender manuelt i Outlook) */
     #btnSend{display:none!important}
+   /* --- Mobil signatur: ikke scroll når man tegner --- */
+#sig { touch-action: none; }
+
+/* Lås “overscroll” (iOS bounce) og fjern horisontal scrolling */
+html, body { overscroll-behavior: contain; width:100%; max-width:100%; overflow-x:hidden; }
+
+/* Skjul adminpanel som standard. Vis kun i admin-modus. (JS legger til body.is-admin) */
+#adminPanel { display:none; }
+body.is-admin #adminPanel { display:block; }
+
+/* Skjul admin-only elementer for deltakere (JS legger til body.learner) */
+body.learner .admin-only { display:none !important; }
+
+/* Grid som ikke stikker utenfor på smale skjermer */
+.container { grid-template-columns: minmax(0,380px) minmax(0,1fr); }
+.container.onecol { grid-template-columns: minmax(0,1fr); }
+
+@media(max-width:1100px){
+  .container { grid-template-columns: minmax(0,1fr); }
+}
+
+/* Video 100% bredde og midtstilt */
+#playerWrap { width:100%; max-width:100%; }
+#playerWrap iframe { width:100% !important; height:100% !important; }
+
+/* Canvas/signatur tilpasset veldig små mobiler */
+@media(max-width:480px){
+  #sig { width:100%; height:180px; }
+}
+ 
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-</head>
+<script>
+  // Sett klasse på <body> helt tidlig for å unngå "flash"
+  (function () {
+    var p = new URLSearchParams(location.search);
+    if (p.get('admin') === '1') {
+      document.addEventListener('DOMContentLoaded', function(){ document.body.classList.add('is-admin'); });
+    } else {
+      document.addEventListener('DOMContentLoaded', function(){ document.body.classList.add('learner'); });
+    }
+  })();
+</script>
+
+    
+    </head>
 <body>
   <header>
     <h1>Opplæringsportal – Video + Quiz + Attest</h1>
@@ -232,11 +275,11 @@
           </div>
           <p style="margin-top:16px;font-size:12px;opacity:.8">Oppbevar dokumentasjonen iht. HMS-rutiner.</p>
         </div>
-        <div class="btnbar" style="margin-top:10px">
-          <button id="btnPrint">Skriv ut / Lagre som PDF</button>
-          <button id="btnPDF">Direkte PDF-eksport</button>
-          <button id="btnCSV">Eksporter logg (CSV)</button>
-        </div>
+<div class="btnbar" style="margin-top:10px">
+  <button id="btnPrint" class="admin-only">Skriv ut / Lagre som PDF</button>
+  <button id="btnPDF">Direkte PDF-eksport</button>
+  <button id="btnCSV">Eksporter logg (CSV)</button>
+</div>
       </div>
     </section>
   </div>
@@ -338,7 +381,17 @@
       }
     }
 
-    function liveLinkFor(email){ if(!__cid){ return null; } const uid = encodeURIComponent(email||''); const sep = baseURL().includes('?') ? '&' : '?'; const be  = encodeURIComponent(backendURL()); return baseURL()+sep+'cid='+encodeURIComponent(__cid)+(uid?('&uid='+uid):'')+(be?('&be='+be):''); }
+   function liveLinkFor(email){
+  if(!__cid) return null;
+  const uid = encodeURIComponent((email||'').trim());
+  const sep = baseURL().includes('?') ? '&' : '?';
+  const be  = encodeURIComponent(backendURL());
+  return baseURL()
+    + sep + 'cid=' + encodeURIComponent(__cid)
+    + (uid ? ('&uid=' + uid) : '')
+    + (be  ? ('&be='  + be ) : '');
+}
+
     function copyLiveLink(){ if(!__cid){ alert('Kurs er ikke publisert ennå.'); return; } const url = liveLinkFor(''); navigator.clipboard.writeText(url).then(()=>alert('Lenke kopiert: '+url)); }
 
     // Vi sender manuelt i Outlook
@@ -420,12 +473,50 @@
 
     function gradeQuiz(){ const qsArr=getActiveQuiz((window.__loadedCourse?.tool)||qs('#tool').value); let ok=0; qsArr.forEach((it,i)=>{ const v=document.querySelector(`input[name=q${i}]:checked`); if(v && Number(v.value)===it.c) ok++; }); quizPct=qsArr.length?Math.round((ok/qsArr.length)*100):100; qs('#qres').textContent=`Score: ${ok}/${qsArr.length} (${quizPct}%)`; updateGate(); }
 
-    // Signatur
-    const sig=document.getElementById('sig'); const ctx=sig.getContext('2d'); let drawing=false, lastPt=null;
-    sig.addEventListener('pointerdown',e=>{drawing=true; lastPt=[e.offsetX,e.offsetY]});
-    sig.addEventListener('pointermove',e=>{ if(!drawing) return; ctx.strokeStyle='#9fc3ff'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(lastPt[0],lastPt[1]); ctx.lineTo(e.offsetX,e.offsetY); ctx.stroke(); lastPt=[e.offsetX,e.offsetY];});
-    ['pointerup','pointerleave'].forEach(ev=>sig.addEventListener(ev,()=>drawing=false));
-    function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
+// --- Signatur med låst scrolling på mobil ---
+const sig = document.getElementById('sig');
+const ctx = sig.getContext('2d');
+let drawing = false, lastPt = null;
+
+function canvasPoint(e){
+  const r = sig.getBoundingClientRect();
+  const touch = e.touches ? e.touches[0] : e;
+  return [ touch.clientX - r.left, touch.clientY - r.top ];
+}
+function startDraw(e){
+  drawing = true;
+  lastPt = canvasPoint(e);
+  document.body.style.overflow = 'hidden'; // lås scroll mens vi tegner
+}
+function moveDraw(e){
+  if(!drawing) return;
+  e.preventDefault(); // hindrer scroll/pinch
+  const p = canvasPoint(e);
+  ctx.strokeStyle = '#9fc3ff';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(lastPt[0], lastPt[1]);
+  ctx.lineTo(p[0], p[1]);
+  ctx.stroke();
+  lastPt = p;
+}
+function endDraw(){
+  drawing = false;
+  document.body.style.overflow = ''; // åpne scroll igjen
+  updateGate();
+}
+
+sig.addEventListener('pointerdown', startDraw);
+sig.addEventListener('pointermove', moveDraw, { passive:false });
+['pointerup','pointerleave','pointercancel'].forEach(ev => sig.addEventListener(ev, endDraw));
+
+// Tøm signatur-knappen bruker fortsatt clearSig():
+function clearSig(){
+  ctx.clearRect(0,0,sig.width,sig.height);
+  updateGate();
+}
+
 
     function isCanvasBlank(c){ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; }
 
@@ -464,7 +555,9 @@
       qs('#c_quiz').textContent=quizPct+' %';
       qs('#c_time').textContent=now;
       try{ qs('#c_sig').src = sig.toDataURL('image/png'); }catch(_){}
-      qs('#attest').style.display='block';
+   qs('#attest').style.display = 'block';
+qs('#attest').scrollIntoView({ behavior:'smooth', block:'start' });
+
 
       // Lokal logg
       if(storageOK()){
@@ -493,14 +586,34 @@
 
     // Eksporter
     function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['cid','uid','name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
-    const exportPDFCert=()=>{ const cert=qs('#cert'); const opt={ margin:10, filename:'attest.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2 }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' } }; html2pdf().from(cert).set(opt).save(); };
+    const exportPDFCert = () => {
+  const cert = qs('#cert');
+  const name = (qs('#c_name').textContent || 'attest').replace(/\s+/g,'_');
+  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+
+  const opt = {
+    margin: 10,
+    filename: `${name}_${course}_${dt}.pdf`,
+    image: { type:'jpeg', quality:0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+  };
+
+  html2pdf().from(cert).set(opt).save();
+};
 
     // ---------- URL-parametre + learner-modus ----------
-    function enterLearnerMode(course){
-      const admin=qs('#adminPanel'); if(admin) admin.classList.add('hidden');
-      const cont=qs('#layout'); if(cont) cont.classList.add('onecol');
-      const hdr=qs('#subtitle'); if(hdr && course){ hdr.textContent='Kurs: '+(course.title||''); }
-    }
+function enterLearnerMode(course){
+  const admin = qs('#adminPanel');
+  if (admin) admin.classList.add('hidden');
+  const cont = qs('#layout');
+  if (cont) cont.classList.add('onecol');
+  const hdr = qs('#subtitle');
+  if (hdr && course){ hdr.textContent = 'Kurs: ' + (course.title||''); }
+  document.body.classList.add('learner'); // <-- NY/BEKREFT
+}
+
 
     async function loadFromURL(){
       const p=new URLSearchParams(location.search);
@@ -563,3 +676,4 @@
   </script>
 </body>
 </html>
+
