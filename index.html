@@ -764,41 +764,75 @@ function isIOS(){
 }
 
 async function exportPDFCert(){
-  const wrap = qs('#attest');   // RENDRER HELE KORTET, ikke bare #cert
-  const cert = qs('#cert');
+  const cert = document.querySelector('#cert');
+  const wrap = document.querySelector('#attest');
 
-  // Vis attesten hvis skjult
+  // Vis attesten hvis den er skjult
   if (getComputedStyle(wrap).display === 'none') {
     wrap.style.display = 'block';
     await new Promise(r => requestAnimationFrame(r));
   }
 
-  // Inline bilder for å unngå CORS/blank
-  await ensureInlineImages(cert || wrap);
+  // Inline alle <img> for å unngå CORS
+  await ensureInlineImages(cert);
 
-  const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
-  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  // Midlertidig lås bredde til A4 for stabil layout
+  const prevWidth = cert.style.width;
+  cert.style.width = '210mm';
+
+  // iOS trenger lavere scale for å unngå "blank canvas"
+  const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const scale = isiOS ? 1 : 2;
+
+  // Render til canvas
+  let canvas;
+  try{
+    canvas = await html2canvas(cert, {
+      scale,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY
+    });
+  } finally {
+    cert.style.width = prevWidth;
+  }
+
+  // jsPDF (fra html2pdf.bundle)
+  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+  if (!JsPDF) { alert('jsPDF mangler'); return; }
+
+  const imgData = canvas.toDataURL('image/jpeg', 0.98);
+  const pdf = new JsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW  = pageW;
+  const imgH  = canvas.height * imgW / canvas.width;
+
+  let heightLeft = imgH;
+  let position = 0;
+
+  pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+  heightLeft -= pageH;
+
+  while (heightLeft > 0) {
+    position -= pageH;
+    pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+    heightLeft -= pageH;
+  }
+
+  const name   = (document.querySelector('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course = (document.querySelector('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
   const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
 
-  const opt = {
-    margin: 10, // mm
-    filename: `${name}_${course}_${dt}.pdf`,
-    image: { type:'jpeg', quality:0.98 },
-    html2canvas: {
-      scale: isIOS() ? 1.1 : 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      allowTaint: true,
-      imageTimeout: 0,
-      letterRendering: true
-    },
-    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
-    pagebreak: { mode: ['css', 'legacy'] }
-  };
-
-  await html2pdf().from(wrap).set(opt).save();
+  pdf.save(`${name}_${course}_${dt}.pdf`);
 }
+
 
 
 
@@ -892,5 +926,6 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
 
