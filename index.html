@@ -37,6 +37,8 @@
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #415983;background:#0c162a;font-size:11px}
     .hidden{display:none!important}
     .banner{margin:12px 16px 0;padding:10px 12px;border:1px dashed #3a4c70;border-radius:10px;background:#0b1222;font-size:12px}
+    /* Skjul backend-utsending (vi sender manuelt i Outlook) */
+    #btnSend{display:none!important}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
@@ -239,6 +241,7 @@
     </section>
   </div>
 
+  <!-- Del 2 (script) kommer under -->
   <script>
     // ---------- Hjelpere ----------
     const qs = s=>document.querySelector(s);
@@ -246,7 +249,7 @@
     const escapeHtml = s=>(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
     const storageOK = ()=>{try{localStorage.setItem('_t','1');localStorage.removeItem('_t');return true;}catch(e){return false;}};
     const defaultBase = ()=> location.origin + location.pathname; // uten query/hash
-    const banner = (msg,type='warn')=>{ const b=qs('#topBanner'); if(!b) return; b.textContent=msg; b.classList.remove('hidden'); };
+    const banner = (msg)=>{ const b=qs('#topBanner'); if(!b) return; b.textContent=msg; b.classList.remove('hidden'); };
 
     // ---------- Global status ----------
     let __cid = null;      // kurs-ID fra backend
@@ -309,89 +312,96 @@
     function backendURL(){ const fromParam = (__backend && __backend.trim()) || ''; const fromField = (qs('#backendEndpoint')?.value || '').trim(); return fromParam || fromField; }
     function baseURL(){ return (qs('#baseUrl').value||'').trim() || defaultBase(); }
 
- async function publishCourse(){
-  const url = backendURL(); if(!url){ alert('Sett backend-URL først.'); return; }
-  const course = courseFromUI();
-  try {
-    const res = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ fn:'publish_course', course })
-    });
-    const data = await res.json();
-    if (data.ok && data.cid) {
-      __cid = data.cid; setPubStatus('Publisert: ' + __cid);
-      alert('Publisert. CID: ' + __cid); return;
+    // Publiser kurs (POST → GET fallback)
+    async function publishCourse(){
+      const url = backendURL(); if(!url){ alert('Sett backend-URL først.'); return; }
+      const course = courseFromUI();
+      try {
+        const res = await fetch(url, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ fn:'publish_course', course })
+        });
+        const data = await res.json();
+        if (data.ok && data.cid) { __cid=data.cid; setPubStatus('Publisert: '+__cid); alert('Publisert. CID: '+__cid); return; }
+      } catch(e) { /* fallback */ }
+      try {
+        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(course))));
+        const u = new URL(url);
+        u.searchParams.set('fn','publish_course');
+        u.searchParams.set('course', b64);
+        const res2 = await fetch(u.toString());
+        const data2 = await res2.json();
+        if (data2.ok && data2.cid) { __cid=data2.cid; setPubStatus('Publisert: '+__cid); alert('Publisert. CID: '+__cid); return; }
+        alert('Klarte ikke publisere (uventet svar).');
+      } catch(err) {
+        alert('Feil ved publisering. Sjekk backend-URL og at webappen er "Alle med lenken".');
+      }
     }
-  } catch(e) { /* fallback */ }
-  try {
-    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(course))));
-    const u = new URL(url);
-    u.searchParams.set('fn','publish_course');
-    u.searchParams.set('course', b64);
-    const res2 = await fetch(u.toString());
-    const data2 = await res2.json();
-    if (data2.ok && data2.cid) {
-      __cid = data2.cid; setPubStatus('Publisert: ' + __cid);
-      alert('Publisert. CID: ' + __cid); return;
-    }
-    alert('Klarte ikke publisere (uventet svar).');
-  } catch(err) {
-    alert('Feil ved publisering. Sjekk backend-URL og at webappen er "Alle med lenken".');
-  }
-}
-
 
     function liveLinkFor(email){ if(!__cid){ return null; } const uid = encodeURIComponent(email||''); const sep = baseURL().includes('?') ? '&' : '?'; const be  = encodeURIComponent(backendURL()); return baseURL()+sep+'cid='+encodeURIComponent(__cid)+(uid?('&uid='+uid):'')+(be?('&be='+be):''); }
     function copyLiveLink(){ if(!__cid){ alert('Kurs er ikke publisert ennå.'); return; } const url = liveLinkFor(''); navigator.clipboard.writeText(url).then(()=>alert('Lenke kopiert: '+url)); }
 
-    async function sendInvites(){ const url=backendURL(); if(!url){ alert('Sett backend-URL først.'); return; } if(!__cid){ await publishCourse(); if(!__cid) return; }
-      const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); if(!emails.length){ alert('Ingen mottakere.'); return; }
-      const recipients = emails.map(mail=>({mail, link: liveLinkFor(mail)}));
-      const message = qs('#inviteMsg').value || 'Hei! Du er tildelt kurs. Klikk lenken for å starte.';
-      try{
-        const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'send_invites', cid:__cid, recipients, message})});
-        const data=await res.json(); alert(data.ok?('Sendt '+(data.count||recipients.length)+' invitasjoner.'):'Feil ved utsendelse');
-      }catch(e){ alert('Feil ved utsendelse'); }
-    }
-
-    function mailtoFallback(){ if(!__cid){ alert('Publiser kurs først (for å få https-lenke).'); return; } const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean); if(!emails.length){ alert('Ingen mottakere.'); return; }
+    // Vi sender manuelt i Outlook
+    function mailtoFallback(){
+      if(!__cid){ alert('Publiser kurs først (for å få https-lenke).'); return; }
+      const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean);
+      if(!emails.length){ alert('Ingen mottakere.'); return; }
       const url = liveLinkFor('');
       const subj = encodeURIComponent('Kurs: '+(courseFromUI().title||'opplæring'));
-      const body = encodeURIComponent((qs('#inviteMsg').value || 'Hei! Klikk lenken for å starte:')+'\n\n'+url+'\n\n'+'(Bruker-sporing legges automatisk når vi sender via backend.)');
+      const body = encodeURIComponent((qs('#inviteMsg').value || 'Hei! Klikk lenken for å starte:')+'\n\n'+url+'\n\n');
       window.location.href = 'mailto:'+emails.join(',')+'?subject='+subj+'&body='+body;
     }
 
-async function aiSuggestQuiz(){
-  const url = backendURL(); const transcript = (qs('#transcript').value||'').trim();
-  if(!transcript){ alert('Lim inn transkript først.'); return; }
-  if(!url){ alert('Sett backend-URL først.'); return; }
-  try{
-    const res = await fetch(url, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ fn:'quiz_from_transcript', transcript })
-    });
-    const data = await res.json();
-    if (Array.isArray(data.quiz)) { buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); return; }
-  }catch(e){ /* fallback */ }
-  try{
-    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({transcript}))));
-    const u = new URL(url);
-    u.searchParams.set('fn','quiz_from_transcript');
-    u.searchParams.set('transcript', b64);
-    const res2 = await fetch(u.toString());
-    const data2 = await res2.json();
-    if (Array.isArray(data2.quiz)) { buildQuizEditor(data2.quiz); alert('AI-forslag lagt inn.'); return; }
-    alert('Endepunkt returnerte ikke forventet format.');
-  }catch(err){
-    alert('Klarte ikke hente AI-forslag (nettverk/CORS).');
-  }
-}
-
+    // AI-forslag (POST → GET fallback)
+    async function aiSuggestQuiz(){
+      const url = backendURL(); const transcript = (qs('#transcript').value||'').trim();
+      if(!transcript){ alert('Lim inn transkript først.'); return; }
+      if(!url){ alert('Sett backend-URL først.'); return; }
+      try{
+        const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ fn:'quiz_from_transcript', transcript }) });
+        const data = await res.json();
+        if (Array.isArray(data.quiz)) { buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); return; }
+      }catch(e){ /* fallback */ }
+      try{
+        const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({transcript}))));
+        const u = new URL(url); u.searchParams.set('fn','quiz_from_transcript'); u.searchParams.set('transcript', b64);
+        const res2 = await fetch(u.toString()); const data2 = await res2.json();
+        if (Array.isArray(data2.quiz)) { buildQuizEditor(data2.quiz); alert('AI-forslag lagt inn.'); return; }
+        alert('Endepunkt returnerte ikke forventet format.');
+      }catch(err){ alert('Klarte ikke hente AI-forslag (nettverk/CORS).'); }
+    }
 
     // ---------- Video/Quiz (deltaker) ----------
     let player, duration=0, seen=0, interval, threshold=0.9; let quizPct=0; let allowedAhead=3;
-    const DEFAULT_QUIZ = {personlofter:[{q:'Må du alltid gjøre funksjonstest før bruk?',a:['Ja','Nei'],c:0},{q:'Hva gjør du ved vind over maks grense?',a:['Kjører roligere','Stopper og tar ned liften'],c:1},{q:'Må du bruke sele ved kurv?',a:['Avhenger av type','Ja, ved fare for utkast'],c:1}],truck:[{q:'Krever truck sertifisert opplæring (§10-3)?',a:['Nei','Ja'],c:1},{q:'Hva bestemmer maksimal last?',a:['Vekt og lastesenter','Dekktrykk'],c:0},{q:'Skal fotgjengerfelt respekteres?',a:['Ja','Nei'],c:0}],vinsj:[{q:'Skal du stå i lastlinjen?',a:['Ja','Nei'],c:1},{q:'Hva gjør du ved uvanlig lyd?',a:['Ignorerer','Stopper og sjekker'],c:1},{q:'Trenger hansker?',a:['Anbefalt','Påkrevd ved ståltau'],c:1}],kappesliper:[{q:'Skal vernedeksel være på?',a:['Valgfritt','Ja'],c:1},{q:'Briller og hørselvern?',a:['Ja','Nei'],c:0},{q:'Bytte blad mens plugget i?',a:['Ja','Nei'],c:1}],custom:[{q:'Har du lest bruksanvisningen?',a:['Ja','Nei'],c:0},{q:'Er relevante farer forstått?',a:['Ja','Nei'],c:0},{q:'Kan du stopp/nødprosedyre?',a:['Ja','Nei'],c:0}]};
+
+    const DEFAULT_QUIZ = {
+      personlofter:[
+        {q:'Må du alltid gjøre funksjonstest før bruk?',a:['Ja','Nei'],c:0},
+        {q:'Hva gjør du ved vind over maks grense?',a:['Kjører roligere','Stopper og tar ned liften'],c:1},
+        {q:'Må du bruke sele ved kurv?',a:['Avhenger av type','Ja, ved fare for utkast'],c:1}
+      ],
+      truck:[
+        {q:'Krever truck sertifisert opplæring (§10-3)?',a:['Nei','Ja'],c:1},
+        {q:'Hva bestemmer maksimal last?',a:['Vekt og lastesenter','Dekktrykk'],c:0},
+        {q:'Skal fotgjengerfelt respekteres?',a:['Ja','Nei'],c:0}
+      ],
+      vinsj:[
+        {q:'Skal du stå i lastlinjen?',a:['Ja','Nei'],c:1},
+        {q:'Hva gjør du ved uvanlig lyd?',a:['Ignorerer','Stopper og sjekker'],c:1},
+        {q:'Trenger hansker?',a:['Anbefalt','Påkrevd ved ståltau'],c:1}
+      ],
+      kappesliper:[
+        {q:'Skal vernedeksel være på?',a:['Valgfritt','Ja'],c:1},
+        {q:'Briller og hørselvern?',a:['Ja','Nei'],c:0},
+        {q:'Bytte blad mens plugget i?',a:['Ja','Nei'],c:1}
+      ],
+      custom:[
+        {q:'Har du lest bruksanvisningen?',a:['Ja','Nei'],c:0},
+        {q:'Er relevante farer forstått?',a:['Ja','Nei'],c:0},
+        {q:'Kan du stopp/nødprosedyre?',a:['Ja','Nei'],c:0}
+      ]
+    };
 
     const getActiveQuiz = key=> (window.__loadedCourse&&Array.isArray(window.__loadedCourse.quiz)&&window.__loadedCourse.quiz.length)? window.__loadedCourse.quiz : (DEFAULT_QUIZ[key]||DEFAULT_QUIZ.custom);
 
@@ -411,48 +421,114 @@ async function aiSuggestQuiz(){
     function gradeQuiz(){ const qsArr=getActiveQuiz((window.__loadedCourse?.tool)||qs('#tool').value); let ok=0; qsArr.forEach((it,i)=>{ const v=document.querySelector(`input[name=q${i}]:checked`); if(v && Number(v.value)===it.c) ok++; }); quizPct=qsArr.length?Math.round((ok/qsArr.length)*100):100; qs('#qres').textContent=`Score: ${ok}/${qsArr.length} (${quizPct}%)`; updateGate(); }
 
     // Signatur
-    const sig=document.getElementById('sig'); const ctx=sig.getContext('2d'); let drawing=false, lastPt=null; sig.addEventListener('pointerdown',e=>{drawing=true; lastPt=[e.offsetX,e.offsetY]}); sig.addEventListener('pointermove',e=>{ if(!drawing) return; ctx.strokeStyle='#9fc3ff'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(lastPt[0],lastPt[1]); ctx.lineTo(e.offsetX,e.offsetY); ctx.stroke(); lastPt=[e.offsetX,e.offsetY];}); ['pointerup','pointerleave'].forEach(ev=>sig.addEventListener(ev,()=>drawing=false)); function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
+    const sig=document.getElementById('sig'); const ctx=sig.getContext('2d'); let drawing=false, lastPt=null;
+    sig.addEventListener('pointerdown',e=>{drawing=true; lastPt=[e.offsetX,e.offsetY]});
+    sig.addEventListener('pointermove',e=>{ if(!drawing) return; ctx.strokeStyle='#9fc3ff'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(lastPt[0],lastPt[1]); ctx.lineTo(e.offsetX,e.offsetY); ctx.stroke(); lastPt=[e.offsetX,e.offsetY];});
+    ['pointerup','pointerleave'].forEach(ev=>sig.addEventListener(ev,()=>drawing=false));
+    function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
 
-    function updateGate(){ const need=Number((window.__loadedCourse?.pass)||qs('#pass').value||80); const tNeed=Number((window.__loadedCourse?.threshold)||qs('#threshold').value||90); const pct=duration?Math.min(100,(seen/duration)*100):0; const okVideo=pct>=tNeed; const okQuiz=quizPct>=need; const okAck=qs('#ack').checked; const hasSig=!isCanvasBlank(sig); const open=okVideo&&okQuiz&&okAck&&hasSig; qs('#btnComplete').disabled=!open; qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`; }
-    const isCanvasBlank=c=>{ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; };
+    function isCanvasBlank(c){ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; }
 
-const endpoint = backendURL();
-if (endpoint && __cid) {
-  const rec = { cid:__cid, uid:__uid||'', name, id, mail, course:c.title,
-                url, seen: pct.toFixed(1), quiz: quizPct, time: now };
-  try {
-    await fetch(endpoint, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ fn:'log_completion', rec })
-    });
-  } catch(e) {
-    try {
-      const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(rec))));
-      const u = new URL(endpoint);
-      u.searchParams.set('fn','log_completion');
-      u.searchParams.set('rec', b64);
-      await fetch(u.toString());
-    } catch(_) {}
-  }
-}
+    function updateGate(){
+      const need=Number((window.__loadedCourse?.pass)||qs('#pass').value||80);
+      const tNeed=Number((window.__loadedCourse?.threshold)||qs('#threshold').value||90);
+      const pct=duration?Math.min(100,(seen/duration)*100):0;
+      const okVideo=pct>=tNeed, okQuiz=quizPct>=need, okAck=qs('#ack').checked, hasSig=!isCanvasBlank(sig);
+      const open=okVideo&&okQuiz&&okAck&&hasSig;
+      qs('#btnComplete').disabled=!open;
+      qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`;
+    }
 
+    // Fullfør, lag attest og logg
+    async function completeAndGenerate(){
+      // Sjekk gate
+      const btn=qs('#btnComplete'); if(btn.disabled){ alert('Oppfyll kravene først.'); return; }
 
+      // Hent data
+      const name=(qs('#empName').value||'').trim();
+      const id=(qs('#empId').value||'').trim();
+      const mail=(qs('#email').value||'').trim();
+      const c = window.__loadedCourse || courseFromUI();
+      const url=(qs('#yt').value||c.yt||'').trim();
+      const pct=duration?Math.min(100,(seen/duration)*100):0;
+      const now=new Date().toISOString();
+
+      // Fyll attest
+      qs('#c_name').textContent=name;
+      qs('#c_id').textContent=id;
+      qs('#c_mail').textContent=mail;
+      qs('#c_course').textContent=c.title||'';
+      qs('#c_cid').textContent=__cid||'(lokal)';
+      qs('#c_video').textContent=url;
+      qs('#c_seen').textContent=pct.toFixed(1)+' %';
+      qs('#c_quiz').textContent=quizPct+' %';
+      qs('#c_time').textContent=now;
+      try{ qs('#c_sig').src = sig.toDataURL('image/png'); }catch(_){}
+      qs('#attest').style.display='block';
+
+      // Lokal logg
+      if(storageOK()){
+        const arr=JSON.parse(localStorage.getItem('trainingLog')||'[]');
+        arr.push({cid:__cid||'',uid:__uid||'',name,id,mail,course:c.title||'',url,seen:pct.toFixed(1),quiz:quizPct,time:now});
+        localStorage.setItem('trainingLog', JSON.stringify(arr));
+      }
+
+      // Backend logg (POST → GET fallback)
+      const endpoint = backendURL();
+      if (endpoint && __cid) {
+        const rec = { cid:__cid, uid:__uid||'', name, id, mail, course:c.title||'', url, seen:pct.toFixed(1), quiz:quizPct, time:now };
+        try {
+          await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'log_completion', rec})});
+        } catch(e) {
+          try {
+            const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(rec))));
+            const u = new URL(endpoint); u.searchParams.set('fn','log_completion'); u.searchParams.set('rec', b64);
+            await fetch(u.toString());
+          }catch(_){}
+        }
+      }
+
+      alert('Attest generert. Du kan nå skrive ut eller lagre PDF.');
+    }
+
+    // Eksporter
     function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['cid','uid','name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
     const exportPDFCert=()=>{ const cert=qs('#cert'); const opt={ margin:10, filename:'attest.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2 }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' } }; html2pdf().from(cert).set(opt).save(); };
 
     // ---------- URL-parametre + learner-modus ----------
-    function enterLearnerMode(course){ const admin=qs('#adminPanel'); if(admin) admin.classList.add('hidden'); const cont=qs('#layout'); if(cont) cont.classList.add('onecol'); const hdr=qs('#subtitle'); if(hdr && course){ hdr.textContent='Kurs: '+(course.title||''); } }
+    function enterLearnerMode(course){
+      const admin=qs('#adminPanel'); if(admin) admin.classList.add('hidden');
+      const cont=qs('#layout'); if(cont) cont.classList.add('onecol');
+      const hdr=qs('#subtitle'); if(hdr && course){ hdr.textContent='Kurs: '+(course.title||''); }
+    }
 
-    async function loadFromURL(){ const p=new URLSearchParams(location.search); const cid=p.get('cid'); __uid=p.get('uid'); const be=p.get('be'); if(be){ try{ setBackend(decodeURIComponent(be)); }catch(e){ setBackend(be); } }
-      const adminFlag = p.get('admin');
+    async function loadFromURL(){
+      const p=new URLSearchParams(location.search);
+      const cid=p.get('cid'); __uid=p.get('uid'); const be=p.get('be');
+      if(be){ try{ setBackend(decodeURIComponent(be)); }catch(e){ setBackend(be); } }
       qs('#baseUrl').value = defaultBase();
-      if(cid){ const url=backendURL(); if(!url){ banner('Mangler backend-URL. Lenken bør inneholde &be=…'); return; } try{ const res=await fetch(url+'?cid='+encodeURIComponent(cid)); const data=await res.json(); if(data && data.course){ window.__loadedCourse=data.course; applyCourse(data.course); buildQuizFromLoaded(); __cid=cid; setPubStatus('Fra lenke: '+__cid); if(!adminFlag) enterLearnerMode(data.course); initVideo(); } else { banner('Fant ikke kurs for angitt cid.'); } }catch(e){ banner('Klarte ikke hente kurs fra backend. Sjekk at /exec er riktig.'); } }
+      const adminFlag = p.get('admin');
+
+      if(cid){
+        const url=backendURL(); if(!url){ banner('Mangler backend-URL. Lenken bør inneholde &be=…'); return; }
+        try{
+          const res=await fetch(url+'?cid='+encodeURIComponent(cid));
+          const data=await res.json();
+          if(data && data.course){
+            window.__loadedCourse=data.course; applyCourse(data.course); buildQuizFromLoaded();
+            __cid=cid; setPubStatus('Fra lenke: '+__cid);
+            if(!adminFlag) enterLearnerMode(data.course);
+            initVideo();
+          } else banner('Fant ikke kurs for angitt cid.');
+        }catch(e){ banner('Klarte ikke hente kurs fra backend. Sjekk at /exec er riktig.'); }
+      }
     }
 
     // ---------- Event bindings ----------
     document.addEventListener('DOMContentLoaded',()=>{
       qs('#baseUrl').value = defaultBase();
       fillCourseSelect(); buildQuizEditor(); loadFromURL();
+
       // admin
       qs('#tool').addEventListener('change',()=>{ qs('#customWrap').style.display = qs('#tool').value==='custom' ? 'block':'none'; });
       qs('#btnLoad').addEventListener('click', e=>{ e.preventDefault(); loadCourse(); });
@@ -463,18 +539,22 @@ if (endpoint && __cid) {
       qs('#btnAISuggest').addEventListener('click', e=>{ e.preventDefault(); aiSuggestQuiz(); });
       qs('#btnSaveCourse').addEventListener('click', e=>{ e.preventDefault(); saveCourse(); });
       qs('#btnTest').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+
       // publishing & links
       qs('#btnPublish').addEventListener('click', e=>{ e.preventDefault(); publishCourse(); });
       qs('#btnCopyLive').addEventListener('click', e=>{ e.preventDefault(); copyLiveLink(); });
-      // utsending
-      qs('#btnSend').addEventListener('click', e=>{ e.preventDefault(); sendInvites(); });
+
+      // utsending (backend-knappen er skjult; kun mailto)
+      // qs('#btnSend') er skjult
       qs('#btnMailto').addEventListener('click', e=>{ e.preventDefault(); mailtoFallback(); });
+
       // deltaker
       qs('#btnLoadVideo').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
       qs('#btnGrade').addEventListener('click', e=>{ e.preventDefault(); gradeQuiz(); });
       qs('#ack').addEventListener('change', updateGate);
       qs('#btnClearSig').addEventListener('click', e=>{ e.preventDefault(); clearSig(); });
       qs('#btnComplete').addEventListener('click', e=>{ e.preventDefault(); completeAndGenerate(); });
+
       // attest
       qs('#btnPrint').addEventListener('click', e=>{ e.preventDefault(); window.print(); });
       qs('#btnPDF').addEventListener('click', e=>{ e.preventDefault(); exportPDFCert(); });
@@ -483,5 +563,3 @@ if (endpoint && __cid) {
   </script>
 </body>
 </html>
-
-
