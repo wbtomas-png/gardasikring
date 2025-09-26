@@ -536,6 +536,13 @@
 
   // ---------- Video/Quiz ----------
   let player, duration=0, seen=0, interval, threshold=0.9; let quizPct=0; let allowedAhead=3;
+let __didUserGestureUnmute = false;
+document.addEventListener('click', () => {
+  if (!__didUserGestureUnmute && player && typeof player.unMute === 'function') {
+    __didUserGestureUnmute = true;
+    try { player.unMute(); player.setVolume(100); } catch(_) {}
+  }
+}, { once:true, capture:true });
 
   const DEFAULT_QUIZ = {
     personlofter:[
@@ -991,6 +998,7 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
 
 
