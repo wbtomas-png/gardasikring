@@ -645,48 +645,63 @@ qs('#attest').scrollIntoView({ behavior:'smooth', block:'start' });
 
     // Eksporter
 // -- Hjelper: inline/”dataURL”-ifier bilder (logo) for å unngå CORS-blank PDF
-async function ensureInlineImages(root){
-  const imgs = root.querySelectorAll('img');
-  await Promise.all([...imgs].map(async img => {
-    const src = img.getAttribute('src') || '';
-    if (!src || src.startsWith('data:')) return;
-    try{
-      const resp = await fetch(src, { mode: 'cors' });
-      if (!resp.ok) throw new Error('img fetch failed');
-      const blob = await resp.blob();
-      const dataUrl = await new Promise((res, rej)=>{
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(blob);
-      });
-      img.setAttribute('src', dataUrl);
-    }catch(e){
-      console.warn('Kunne ikke inline-bilde for PDF:', src, e);
-    }
-  }));
-}
-
 async function exportPDFCert(){
+  const wrap = qs('#attest');
   const cert = qs('#cert');
 
-  // Sørg for at bilder (logo) er inline før html2pdf kjører
+  // Sørg for at attesten faktisk er synlig før vi tar "bilde"
+  if (getComputedStyle(wrap).display === 'none') {
+    wrap.style.display = 'block';
+    await new Promise(r => requestAnimationFrame(r));
+  }
+
+  // Inline logo/bilder for å unngå CORS/blank canvas
   await ensureInlineImages(cert);
 
-  const name  = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
-  const course= (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
-  const dt    = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  // Liten yield hjelper enkelte mobilnettlesere
+  await new Promise(r => setTimeout(r, 50));
 
-  const opt = {
-    margin: 10,
-    filename: `${name}_${course}_${dt}.pdf`,
-    image: { type:'jpeg', quality:0.98 },
-    html2canvas: { scale: 2, useCORS: true, imageTimeout: 15000, logging: false },
-    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-  };
+  // Render til canvas
+  const canvas = await html2canvas(cert, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    allowTaint: true,
+    scrollX: 0,
+    scrollY: -window.scrollY,
+    windowWidth: document.documentElement.clientWidth,
+    windowHeight: document.documentElement.clientHeight,
+    logging: false
+  });
 
-  await new Promise(r => setTimeout(r, 50)); // liten yield hjelper noen mobil-nettlesere
-  html2pdf().from(cert).set(opt).save();
+  const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+  // Sett opp A4 PDF og skaler bildet riktig (støtter flere sider)
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  const imgW = pageW;
+  const imgH = canvas.height * imgW / canvas.width;
+
+  let heightLeft = imgH;
+  let position = 0;
+
+  pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+  heightLeft -= pageH;
+
+  while (heightLeft > 0){
+    position -= pageH;
+    pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', 0, position, imgW, imgH);
+    heightLeft -= pageH;
+  }
+
+  const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+
+  pdf.save(`${name}_${course}_${dt}.pdf`);
 }
 
 
@@ -775,5 +790,6 @@ if (qs('#baseUrl')) {
   </script>
 </body>
 </html>
+
 
 
