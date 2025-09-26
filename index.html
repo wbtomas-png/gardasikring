@@ -803,16 +803,6 @@ async function exportPDFCert(){
 
 
 
-    // Lås bredde til A4 under generering for “page fit”
-    const prevWidth = cert.style.width;
-    cert.style.width = '210mm';
-    try{
-      await html2pdf().from(cert).set(opt).save();
-    } finally {
-      cert.style.width = prevWidth;
-    }
-  }
-
   function exportCSV(){
     const arr = storageOK() ? JSON.parse(localStorage.getItem('trainingLog')||'[]') : [];
     if(!arr.length){ alert('Ingen logger ennå.'); return; }
@@ -902,4 +892,5 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
