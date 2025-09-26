@@ -582,31 +582,38 @@
     } else { createPlayer(id); }
     buildQuizFromLoaded(); updateGate();
   }
-  function createPlayer(id){
-    player=new YT.Player('player',{videoId:id,playerVars:{rel:0,modestbranding:1,controls:1,disablekb:0},events:{
-      onReady:(e)=>{duration=e.target.getDuration(); startTrack(); tryLockRate();},
-      onStateChange:onPlayerStateChange, onPlaybackRateChange:tryLockRate
-    }});
+function createPlayer(id){
+  player = new YT.Player('player', {
+    videoId: id,
+    playerVars: {
+      rel: 0,
+      modestbranding: 1,
+      controls: 1,
+      disablekb: 0,
+      playsinline: 1   // iOS: spill i siden
+    },
+    events: {
+      onReady: (e) => {
+        // Sørg for lyd
+        try { e.target.unMute(); e.target.setVolume(100); } catch(_) {}
+        duration = e.target.getDuration();
+        startTrack();
+        tryLockRate();
+      },
+      onStateChange: onPlayerStateChange,
+      onPlaybackRateChange: tryLockRate
+    }
+  });
+}
+
+function onPlayerStateChange(e){
+  // Når bruker starter (playing), pass på at den ikke er mutet
+  if (e.data === YT.PlayerState.PLAYING) {
+    try { e.target.unMute(); e.target.setVolume(100); } catch(_) {}
+    startTrack();
   }
-  function tryLockRate(){ if(!player||!player.getPlaybackRate) return; const r=player.getPlaybackRate(); if(r>1.25){ try{ player.setPlaybackRate(1); }catch(e){} } }
-  function onPlayerStateChange(e){ if(e.data===1){ startTrack(); } }
-  function startTrack(){
-    clearInterval(interval);
-    threshold=(Number((window.__loadedCourse?.threshold)||qs('#threshold').value||90)/100);
-    allowedAhead=3; let lastTime=0;
-    interval=setInterval(()=>{
-      if(!player||typeof player.getCurrentTime!=='function') return;
-      const cur=player.getCurrentTime();
-      duration=Math.max(duration, player.getDuration());
-      if(cur>seen+allowedAhead){ player.seekTo(seen+0.5,true); return; }
-      if(cur<lastTime-1){ player.seekTo(lastTime,true); return; }
-      seen=Math.max(seen,cur); lastTime=cur; tryLockRate();
-      const pct=duration?Math.min(100,(seen/duration)*100):0;
-      qs('#pbar').style.width=pct.toFixed(1)+'%';
-      qs('#ptext').textContent=pct.toFixed(1)+' % sett';
-      updateGate();
-    },500);
-  }
+}
+
 
   function buildQuizFromLoaded(){
     const k=(window.__loadedCourse?.tool)||qs('#tool').value;
@@ -767,26 +774,27 @@ async function exportPDFCert(){
   const cert = document.querySelector('#cert');
   const wrap = document.querySelector('#attest');
 
-  // Vis attesten hvis den er skjult
+  if (!cert) { alert('Fant ikke attest-innhold (#cert).'); return; }
+
+  // Vis attesten hvis skjult for å sikre layout
   if (getComputedStyle(wrap).display === 'none') {
     wrap.style.display = 'block';
     await new Promise(r => requestAnimationFrame(r));
   }
 
-  // Inline alle <img> for å unngå CORS
-  await ensureInlineImages(cert);
+  // Inline <img> (logo/signatur) for å unngå CORS → blank canvas
+  await ensureInlineImages(cert).catch(()=>{});
 
-  // Midlertidig lås bredde til A4 for stabil layout
+  // Lås bredde midlertidig for stabil A4-render
   const prevWidth = cert.style.width;
   cert.style.width = '210mm';
 
-  // iOS trenger lavere scale for å unngå "blank canvas"
+  // iOS trenger lavere scale
   const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
              || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const scale = isiOS ? 1 : 2;
 
-  // Render til canvas
-  let canvas;
+  let canvas = null;
   try{
     canvas = await html2canvas(cert, {
       scale,
@@ -797,14 +805,37 @@ async function exportPDFCert(){
       scrollX: 0,
       scrollY: -window.scrollY
     });
+  } catch (err) {
+    console.error('html2canvas feilet:', err);
   } finally {
     cert.style.width = prevWidth;
   }
 
-  // jsPDF (fra html2pdf.bundle)
-  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
-  if (!JsPDF) { alert('jsPDF mangler'); return; }
+  // Hvis canvas feilet – prøv html2pdf sin innebygde save som fallback
+  if (!canvas) {
+    try {
+      const name   = (document.querySelector('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+      const course = (document.querySelector('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+      const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      await html2pdf().from(cert).set({
+        margin: 10,
+        filename: `${name}_${course}_${dt}.pdf`,
+        image: { type:'jpeg', quality:0.98 },
+        html2canvas: { scale: isiOS ? 1 : 2, useCORS: true, backgroundColor:'#ffffff', logging:false },
+        jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+      }).save();
+      return;
+    } catch (e) {
+      alert('Klarte ikke generere PDF (canvas og fallback feilet). Sjekk nettverk/CORS.');
+      return;
+    }
+  }
 
+  // jsPDF tilgjengelig?
+  const JsPDF = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+  if (!JsPDF) { alert('jsPDF mangler (html2pdf.bundle må lastes).'); return; }
+
+  // Bygg PDF manuelt (flerside)
   const imgData = canvas.toDataURL('image/jpeg', 0.98);
   const pdf = new JsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
 
@@ -832,6 +863,7 @@ async function exportPDFCert(){
 
   pdf.save(`${name}_${course}_${dt}.pdf`);
 }
+
 
 
 
@@ -926,6 +958,7 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
 
 
