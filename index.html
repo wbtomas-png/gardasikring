@@ -645,23 +645,46 @@ qs('#attest').scrollIntoView({ behavior:'smooth', block:'start' });
 
     // Eksporter
 // -- Hjelper: inline/”dataURL”-ifier bilder (logo) for å unngå CORS-blank PDF
+
+    // Inliner <img> i #cert til data-URL for å unngå CORS som gir blank PDF
+async function ensureInlineImages(root){
+  const imgs = root.querySelectorAll('img');
+  await Promise.all([...imgs].map(async img => {
+    const src = img.getAttribute('src') || '';
+    if (!src || src.startsWith('data:')) return;
+    try{
+      const resp = await fetch(src, { mode: 'cors' });
+      if (!resp.ok) throw new Error('img fetch failed');
+      const blob = await resp.blob();
+      const dataUrl = await new Promise((res, rej)=>{
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      img.setAttribute('src', dataUrl);
+    }catch(e){
+      console.warn('Kunne ikke inline-bilde for PDF:', src, e);
+    }
+  }));
+}
+
+    
 async function exportPDFCert(){
   const wrap = qs('#attest');
   const cert = qs('#cert');
 
-  // Sørg for at attesten faktisk er synlig før vi tar "bilde"
+  // Sørg for at attesten er synlig
   if (getComputedStyle(wrap).display === 'none') {
     wrap.style.display = 'block';
     await new Promise(r => requestAnimationFrame(r));
   }
 
-  // Inline logo/bilder for å unngå CORS/blank canvas
+  // Inline alle bilder (logo etc.) for å unngå CORS/blank canvas
   await ensureInlineImages(cert);
-
-  // Liten yield hjelper enkelte mobilnettlesere
   await new Promise(r => setTimeout(r, 50));
 
-  // Render til canvas
+  // Render attesten til canvas
   const canvas = await html2canvas(cert, {
     scale: 2,
     backgroundColor: '#ffffff',
@@ -675,8 +698,6 @@ async function exportPDFCert(){
   });
 
   const imgData = canvas.toDataURL('image/jpeg', 0.98);
-
-  // Sett opp A4 PDF og skaler bildet riktig (støtter flere sider)
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
@@ -703,6 +724,7 @@ async function exportPDFCert(){
 
   pdf.save(`${name}_${course}_${dt}.pdf`);
 }
+
 
 
     // ---------- URL-parametre + learner-modus ----------
@@ -790,6 +812,7 @@ if (qs('#baseUrl')) {
   </script>
 </body>
 </html>
+
 
 
 
