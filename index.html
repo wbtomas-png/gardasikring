@@ -309,11 +309,38 @@
     function backendURL(){ const fromParam = (__backend && __backend.trim()) || ''; const fromField = (qs('#backendEndpoint')?.value || '').trim(); return fromParam || fromField; }
     function baseURL(){ return (qs('#baseUrl').value||'').trim() || defaultBase(); }
 
-    async function publishCourse(){ const url=backendURL(); if(!url){ alert('Sett backend-URL først.'); return; } const course=courseFromUI(); try{
-        const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'publish_course', course})});
-        const data=await res.json(); if(data.ok && data.cid){ __cid=data.cid; setPubStatus('Publisert: '+__cid); alert('Publisert. CID: '+__cid); } else { alert('Klarte ikke publisere.'); }
-      }catch(e){ alert('Feil ved publisering.'); }
+ async function publishCourse(){
+  const url = backendURL(); if(!url){ alert('Sett backend-URL først.'); return; }
+  const course = courseFromUI();
+  try {
+    const res = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ fn:'publish_course', course })
+    });
+    const data = await res.json();
+    if (data.ok && data.cid) {
+      __cid = data.cid; setPubStatus('Publisert: ' + __cid);
+      alert('Publisert. CID: ' + __cid); return;
     }
+  } catch(e) { /* fallback */ }
+  try {
+    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(course))));
+    const u = new URL(url);
+    u.searchParams.set('fn','publish_course');
+    u.searchParams.set('course', b64);
+    const res2 = await fetch(u.toString());
+    const data2 = await res2.json();
+    if (data2.ok && data2.cid) {
+      __cid = data2.cid; setPubStatus('Publisert: ' + __cid);
+      alert('Publisert. CID: ' + __cid); return;
+    }
+    alert('Klarte ikke publisere (uventet svar).');
+  } catch(err) {
+    alert('Feil ved publisering. Sjekk backend-URL og at webappen er "Alle med lenken".');
+  }
+}
+
 
     function liveLinkFor(email){ if(!__cid){ return null; } const uid = encodeURIComponent(email||''); const sep = baseURL().includes('?') ? '&' : '?'; const be  = encodeURIComponent(backendURL()); return baseURL()+sep+'cid='+encodeURIComponent(__cid)+(uid?('&uid='+uid):'')+(be?('&be='+be):''); }
     function copyLiveLink(){ if(!__cid){ alert('Kurs er ikke publisert ennå.'); return; } const url = liveLinkFor(''); navigator.clipboard.writeText(url).then(()=>alert('Lenke kopiert: '+url)); }
@@ -335,10 +362,32 @@
       window.location.href = 'mailto:'+emails.join(',')+'?subject='+subj+'&body='+body;
     }
 
-    async function aiSuggestQuiz(){ const url=backendURL(); const transcript=(qs('#transcript').value||'').trim(); if(!transcript){ alert('Lim inn transkript først.'); return; } if(!url){ alert('Sett backend-URL først (for AI).'); return; }
-      try{ const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fn:'quiz_from_transcript', transcript})}); const data=await res.json(); if(Array.isArray(data.quiz)){ buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); } else { alert('Endepunkt returnerte ikke forventet format.'); }
-      }catch(e){ alert('Klarte ikke hente AI-forslag.'); }
-    }
+async function aiSuggestQuiz(){
+  const url = backendURL(); const transcript = (qs('#transcript').value||'').trim();
+  if(!transcript){ alert('Lim inn transkript først.'); return; }
+  if(!url){ alert('Sett backend-URL først.'); return; }
+  try{
+    const res = await fetch(url, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ fn:'quiz_from_transcript', transcript })
+    });
+    const data = await res.json();
+    if (Array.isArray(data.quiz)) { buildQuizEditor(data.quiz); alert('AI-forslag lagt inn.'); return; }
+  }catch(e){ /* fallback */ }
+  try{
+    const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({transcript}))));
+    const u = new URL(url);
+    u.searchParams.set('fn','quiz_from_transcript');
+    u.searchParams.set('transcript', b64);
+    const res2 = await fetch(u.toString());
+    const data2 = await res2.json();
+    if (Array.isArray(data2.quiz)) { buildQuizEditor(data2.quiz); alert('AI-forslag lagt inn.'); return; }
+    alert('Endepunkt returnerte ikke forventet format.');
+  }catch(err){
+    alert('Klarte ikke hente AI-forslag (nettverk/CORS).');
+  }
+}
+
 
     // ---------- Video/Quiz (deltaker) ----------
     let player, duration=0, seen=0, interval, threshold=0.9; let quizPct=0; let allowedAhead=3;
@@ -367,12 +416,26 @@
     function updateGate(){ const need=Number((window.__loadedCourse?.pass)||qs('#pass').value||80); const tNeed=Number((window.__loadedCourse?.threshold)||qs('#threshold').value||90); const pct=duration?Math.min(100,(seen/duration)*100):0; const okVideo=pct>=tNeed; const okQuiz=quizPct>=need; const okAck=qs('#ack').checked; const hasSig=!isCanvasBlank(sig); const open=okVideo&&okQuiz&&okAck&&hasSig; qs('#btnComplete').disabled=!open; qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`; }
     const isCanvasBlank=c=>{ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; };
 
-    function completeAndGenerate(){ const name=(qs('#empName')||{value:''}).value||''; const id=(qs('#empId')||{value:''}).value||''; const mail=(qs('#email')||{value:''}).value||''; const c=window.__loadedCourse || courseFromUI(); const url=c.yt; const pct=duration?Math.min(100,(seen/duration)*100):0; const now=new Date().toISOString(); const cid=__cid||'—';
-      qs('#c_name').textContent=name||'—'; qs('#c_id').textContent=id||'—'; qs('#c_mail').textContent=mail||'—'; qs('#c_course').textContent=c.title; qs('#c_cid').textContent=cid; qs('#c_video').textContent=url; qs('#c_seen').textContent=pct.toFixed(1)+' %'; qs('#c_quiz').textContent=quizPct+' %'; qs('#c_time').textContent=now; qs('#certSub').textContent='Utstyrsspesifikk opplæring jf. Forskrift om utførelse av arbeid kap. 10 (§§10-1–10-4)'; qs('#c_sig').src=sig.toDataURL('image/png'); qs('#attest').style.display='block';
-      if(storageOK()){ const rec={cid, uid:__uid||'', name,id,mail,course:c.title,url,seen:pct.toFixed(1),quiz:quizPct,time:now}; const arr=JSON.parse(localStorage.getItem('trainingLog')||'[]'); arr.push(rec); localStorage.setItem('trainingLog', JSON.stringify(arr)); }
-      const endpoint=backendURL(); if(endpoint && __cid){ fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({fn:'log_completion', rec:{cid:__cid, uid:__uid||'', name,id,mail,course:c.title,url,seen:pct.toFixed(1),quiz:quizPct,time:now}})}).catch(()=>{}); }
-      window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
-    }
+const endpoint = backendURL();
+if (endpoint && __cid) {
+  const rec = { cid:__cid, uid:__uid||'', name, id, mail, course:c.title,
+                url, seen: pct.toFixed(1), quiz: quizPct, time: now };
+  try {
+    await fetch(endpoint, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ fn:'log_completion', rec })
+    });
+  } catch(e) {
+    try {
+      const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(rec))));
+      const u = new URL(endpoint);
+      u.searchParams.set('fn','log_completion');
+      u.searchParams.set('rec', b64);
+      await fetch(u.toString());
+    } catch(_) {}
+  }
+}
+
 
     function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['cid','uid','name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
     const exportPDFCert=()=>{ const cert=qs('#cert'); const opt={ margin:10, filename:'attest.pdf', image:{ type:'jpeg', quality:0.98 }, html2canvas:{ scale:2 }, jsPDF:{ unit:'mm', format:'a4', orientation:'portrait' } }; html2pdf().from(cert).set(opt).save(); };
@@ -420,4 +483,5 @@
   </script>
 </body>
 </html>
+
 
