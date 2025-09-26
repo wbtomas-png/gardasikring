@@ -601,6 +601,7 @@ function createPlayer(id){
         tryLockRate();
       },
       onStateChange: onPlayerStateChange,
+      
       onPlaybackRateChange: tryLockRate
     }
   });
@@ -612,6 +613,38 @@ function onPlayerStateChange(e){
     try { e.target.unMute(); e.target.setVolume(100); } catch(_) {}
     startTrack();
   }
+}
+function tryLockRate(){
+  if (!player || !player.getPlaybackRate) return;
+  const r = player.getPlaybackRate();
+  if (r > 1.25) { try { player.setPlaybackRate(1); } catch(e){} }
+}
+
+function startTrack(){
+  clearInterval(interval);
+  threshold = (Number((window.__loadedCourse?.threshold) || qs('#threshold').value || 90) / 100);
+  allowedAhead = 3;
+  let lastTime = 0;
+
+  interval = setInterval(()=>{
+    if (!player || typeof player.getCurrentTime !== 'function') return;
+
+    const cur = player.getCurrentTime();
+    duration = Math.max(duration, player.getDuration());
+
+    // Anti-spoling framover / bakover-hopp
+    if (cur > seen + allowedAhead) { player.seekTo(seen + 0.5, true); return; }
+    if (cur < lastTime - 1)       { player.seekTo(lastTime, true);   return; }
+
+    seen = Math.max(seen, cur);
+    lastTime = cur;
+    tryLockRate();
+
+    const pct = duration ? Math.min(100, (seen/duration)*100) : 0;
+    qs('#pbar').style.width = pct.toFixed(1) + '%';
+    qs('#ptext').textContent = pct.toFixed(1) + ' % sett';
+    updateGate();
+  }, 500);
 }
 
 
@@ -958,6 +991,7 @@ async function exportPDFCert(){
   </script>
 </body>
 </html>
+
 
 
 
