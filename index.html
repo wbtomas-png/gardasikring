@@ -757,29 +757,51 @@
     }));
   }
 
-  async function exportPDFCert(){
-    const wrap = qs('#attest');
-    const cert = qs('#cert');
+// Hjelper for iOS (senker scale for å unngå blank PDF)
+function isIOS(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
-    if (getComputedStyle(wrap).display === 'none') {
-      wrap.style.display = 'block';
-      await new Promise(r => requestAnimationFrame(r));
-    }
+async function exportPDFCert(){
+  const wrap = qs('#attest');   // RENDRER HELE KORTET, ikke bare #cert
+  const cert = qs('#cert');
 
-    // inline bilder (logo/signatur) for å hindre CORS/blank PDF
-    await ensureInlineImages(cert);
+  // Vis attesten hvis skjult
+  if (getComputedStyle(wrap).display === 'none') {
+    wrap.style.display = 'block';
+    await new Promise(r => requestAnimationFrame(r));
+  }
 
-    const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
-    const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
-    const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  // Inline bilder for å unngå CORS/blank
+  await ensureInlineImages(cert || wrap);
 
-    const opt = {
-      margin: 10, // mm
-      filename: `${name}_${course}_${dt}.pdf`,
-      image: { type:'jpeg', quality:0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor:'#ffffff' },
-      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-    };
+  const name   = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt     = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+
+  const opt = {
+    margin: 10, // mm
+    filename: `${name}_${course}_${dt}.pdf`,
+    image: { type:'jpeg', quality:0.98 },
+    html2canvas: {
+      scale: isIOS() ? 1.1 : 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      allowTaint: true,
+      imageTimeout: 0,
+      letterRendering: true
+    },
+    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+
+  await html2pdf().from(wrap).set(opt).save();
+}
+
+
+
 
     // Lås bredde til A4 under generering for “page fit”
     const prevWidth = cert.style.width;
@@ -880,3 +902,4 @@
   </script>
 </body>
 </html>
+
