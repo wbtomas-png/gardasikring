@@ -27,7 +27,21 @@
     .bar>div{height:100%;background:#22d3ee;width:0%}
     .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
     #attest{background:white;color:#111;border-radius:12px}
-    #attest .a4{width:210mm;min-height:297mm;padding:18mm;margin:0 auto}
+ /* Attest: responsiv visning på mobil */
+#attest { overflow:auto; }
+#attest .a4 {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 210mm;   /* på store skjermer */
+  min-height: auto;   /* la høyden vokse naturlig på mobil */
+}
+
+/* Mindre padding og én kolonne på smale skjermer */
+@media (max-width: 768px){
+  #attest .a4 { padding: 12mm 8mm; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+
     #attest h2{margin:0 0 6px 0}
     #sig{border:1px dashed #3a4c70;border-radius:8px;height:140px;background:#0b1222}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -164,6 +178,13 @@ body.learner .admin-only { display:none !important; }
           </div>
         </div>
         <div class="note">Tips: Lim inn transkript fra video for å få AI-forslag (via backend), eller bygg manuelt.</div>
+       <div class="row" style="margin-top:8px">
+  <div>
+    <label for="logoUrl">Logo-URL (valgfri)</label>
+    <input id="logoUrl" placeholder="https://…/logo.png" />
+  </div>
+</div>
+
         <h3 style="margin-top:10px">Quiz-redigerer</h3>
         <div id="quizEditor"></div>
         <div class="btnbar">
@@ -286,6 +307,10 @@ body.learner .admin-only { display:none !important; }
 
   <!-- Del 2 (script) kommer under -->
   <script>
+
+      // === Faste standardlenker ===
+  const DEFAULT_BACKEND = 'https://script.google.com/macros/s/AKfycbzYlj2XoarcI9rbsKwRw1OVKpqr929WRSULmcr8O3czHGqt837uRClxn5yLR3sEtLzE/exec';
+  const DEFAULT_BASE    = 'https://wbtomas-png.github.io/gardasikring/';
     // ---------- Hjelpere ----------
     const qs = s=>document.querySelector(s);
     const qsa = s=>Array.from(document.querySelectorAll(s));
@@ -336,15 +361,33 @@ body.learner .admin-only { display:none !important; }
       row.querySelector('.btnRemOpt').addEventListener('click', e=>{ e.preventDefault(); row.remove(); });
     }
 
-    function courseFromUI(){ return {
-      tool: qs('#tool').value,
-      title: qs('#tool').value==='custom' ? (qs('#title').value||'Egendefinert kurs') : qs('#tool option:checked').textContent,
-      yt: qs('#yt').value.trim(),
-      threshold: Number(qs('#threshold').value||90),
-      pass: Number(qs('#pass').value||80),
-      quiz: quizFromEditor()
-    }; }
-    function applyCourse(c){ if(!c) return; qs('#tool').value=c.tool||'custom'; qs('#customWrap').style.display=(c.tool==='custom')?'block':'none'; if(c.tool==='custom') qs('#title').value=c.title||''; qs('#yt').value=c.yt||''; qs('#threshold').value=c.threshold||90; qs('#pass').value=c.pass||80; buildQuizEditor(c.quiz||[]); }
+function courseFromUI(){
+  return {
+    tool: qs('#tool').value,
+    title: qs('#tool').value==='custom' ? (qs('#title').value||'Egendefinert kurs') : qs('#tool option:checked').textContent,
+    yt: qs('#yt').value.trim(),
+    threshold: Number(qs('#threshold').value||90),
+    pass: Number(qs('#pass').value||80),
+    logo: (qs('#logoUrl')?.value || ''),   // <--- NY LINJE
+    quiz: quizFromEditor()
+  };
+}
+
+function applyCourse(c){
+  if(!c) return;
+  qs('#tool').value = c.tool || 'custom';
+  qs('#customWrap').style.display = (c.tool==='custom') ? 'block' : 'none';
+  if(c.tool==='custom') qs('#title').value = c.title || '';
+  qs('#yt').value = c.yt || '';
+  qs('#threshold').value = c.threshold || 90;
+  qs('#pass').value = c.pass || 80;
+
+  // ← LIM INN DENNE LINJA
+  if (qs('#logoUrl')) qs('#logoUrl').value = c.logo || '';
+
+  buildQuizEditor(c.quiz || []);
+}
+
     function saveCourse(){ const data=getStore(); const c=courseFromUI(); let id=qs('#courseId').value||newId(); data[id]=c; setStore(data); alert('Kurs lagret: '+(c.title||id)); }
     function loadCourse(){ const id=qs('#courseId').value; const data=getStore(); window.__loadedCourse=data[id]; applyCourse(data[id]); buildQuizFromLoaded(); }
     function deleteCourse(){ const id=qs('#courseId').value; if(!id) return; const data=getStore(); delete data[id]; setStore(data); alert('Slettet.'); }
@@ -352,8 +395,18 @@ body.learner .admin-only { display:none !important; }
     function importCourseJSON(){ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>{ const f=e.target.files[0]; const r=new FileReader(); r.onload=()=>{ try{ const c=JSON.parse(r.result); const data=getStore(); const id=newId(); data[id]=c; setStore(data); applyCourse(c); alert('Importert.'); }catch(err){ alert('Kunne ikke lese JSON.'); } }; r.readAsText(f); }; inp.click(); }
 
     // ---------- Backend (Apps Script) ----------
-    function backendURL(){ const fromParam = (__backend && __backend.trim()) || ''; const fromField = (qs('#backendEndpoint')?.value || '').trim(); return fromParam || fromField; }
-    function baseURL(){ return (qs('#baseUrl').value||'').trim() || defaultBase(); }
+function backendURL(){
+  // URL‐param ?be=… vinner, ellers felt, ellers fast standard
+  const fromParam = (__backend && __backend.trim()) || '';
+  const fromField = (qs('#backendEndpoint')?.value || '').trim();
+  return fromParam || fromField || DEFAULT_BACKEND;
+}
+function baseURL(){
+  // Felt vinner hvis utfylt, ellers fast standard (og til slutt defaultBase())
+  const fromField = (qs('#baseUrl')?.value || '').trim();
+  return fromField || DEFAULT_BASE || defaultBase();
+}
+
 
     // Publiser kurs (POST → GET fallback)
     async function publishCourse(){
@@ -555,6 +608,12 @@ function clearSig(){
       qs('#c_quiz').textContent=quizPct+' %';
       qs('#c_time').textContent=now;
       try{ qs('#c_sig').src = sig.toDataURL('image/png'); }catch(_){}
+      const logoUrl = (window.__loadedCourse?.logo) || (qs('#logoUrl')?.value) || '';
+if (logoUrl){
+  const img = qs('#cert').querySelector('img.imglogo'); // eller qs('#cert .imglogo')
+  if (img) { img.src = logoUrl; img.alt = 'Logo'; }
+}
+
    qs('#attest').style.display = 'block';
 qs('#attest').scrollIntoView({ behavior:'smooth', block:'start' });
 
@@ -585,23 +644,51 @@ qs('#attest').scrollIntoView({ behavior:'smooth', block:'start' });
     }
 
     // Eksporter
-    function exportCSV(){ const arr=storageOK()? JSON.parse(localStorage.getItem('trainingLog')||'[]') : []; if(!arr.length){ alert('Ingen logger ennå.'); return; } const cols=['cid','uid','name','id','mail','course','url','seen','quiz','time']; const csv=[cols.join(';')].concat(arr.map(o=>cols.map(k=>`"${(o[k]||'').toString().replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='opplaering_logg.csv'; a.click(); URL.revokeObjectURL(a.href); }
-    const exportPDFCert = () => {
+// -- Hjelper: inline/”dataURL”-ifier bilder (logo) for å unngå CORS-blank PDF
+async function ensureInlineImages(root){
+  const imgs = root.querySelectorAll('img');
+  await Promise.all([...imgs].map(async img => {
+    const src = img.getAttribute('src') || '';
+    if (!src || src.startsWith('data:')) return;
+    try{
+      const resp = await fetch(src, { mode: 'cors' });
+      if (!resp.ok) throw new Error('img fetch failed');
+      const blob = await resp.blob();
+      const dataUrl = await new Promise((res, rej)=>{
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      img.setAttribute('src', dataUrl);
+    }catch(e){
+      console.warn('Kunne ikke inline-bilde for PDF:', src, e);
+    }
+  }));
+}
+
+async function exportPDFCert(){
   const cert = qs('#cert');
-  const name = (qs('#c_name').textContent || 'attest').replace(/\s+/g,'_');
-  const course = (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
-  const dt = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+
+  // Sørg for at bilder (logo) er inline før html2pdf kjører
+  await ensureInlineImages(cert);
+
+  const name  = (qs('#c_name').textContent   || 'attest').replace(/\s+/g,'_');
+  const course= (qs('#c_course').textContent || 'kurs').replace(/\s+/g,'_');
+  const dt    = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
 
   const opt = {
     margin: 10,
     filename: `${name}_${course}_${dt}.pdf`,
     image: { type:'jpeg', quality:0.98 },
-    html2canvas: { scale: 2 },
+    html2canvas: { scale: 2, useCORS: true, imageTimeout: 15000, logging: false },
     jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
   };
 
+  await new Promise(r => setTimeout(r, 50)); // liten yield hjelper noen mobil-nettlesere
   html2pdf().from(cert).set(opt).save();
-};
+}
+
 
     // ---------- URL-parametre + learner-modus ----------
 function enterLearnerMode(course){
@@ -619,7 +706,19 @@ function enterLearnerMode(course){
       const p=new URLSearchParams(location.search);
       const cid=p.get('cid'); __uid=p.get('uid'); const be=p.get('be');
       if(be){ try{ setBackend(decodeURIComponent(be)); }catch(e){ setBackend(be); } }
-      qs('#baseUrl').value = defaultBase();
+   // Sett standardverdier
+setBackend(DEFAULT_BACKEND);
+if (qs('#baseUrl')) qs('#baseUrl').value = DEFAULT_BASE;
+
+// (valgfritt) lås feltene for å hindre endring
+if (qs('#backendEndpoint')) {
+  qs('#backendEndpoint').value = DEFAULT_BACKEND;
+  qs('#backendEndpoint').readOnly = true;
+}
+if (qs('#baseUrl')) {
+  qs('#baseUrl').readOnly = true;
+}
+
       const adminFlag = p.get('admin');
 
       if(cid){
@@ -676,4 +775,5 @@ function enterLearnerMode(course){
   </script>
 </body>
 </html>
+
 
