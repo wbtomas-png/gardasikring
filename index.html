@@ -61,6 +61,11 @@
     body.is-admin #adminPanel { display:block; }
     body.learner .admin-only { display:none !important; }
 
+    /* Deltaker-kort (synlig kun for learner) */
+.learner-only { display:none; }
+body.learner .learner-only { display:block; }
+
+    
     /* Grid som ikke stikker utenfor */
     .container { grid-template-columns: minmax(0,380px) minmax(0,1fr); }
     .container.onecol { grid-template-columns: minmax(0,1fr); }
@@ -226,24 +231,38 @@ body.pdf-mode header {
       <div style="height:1px;background:#263247;margin:12px 0"></div>
 
       <h3>Deltaker (manuell test)</h3>
-      <label for="empName">Navn</label>
-      <input id="empName" />
-      <div class="grid2">
-        <div>
-          <label for="empId">Ansattnr / ID</label>
-          <input id="empId" />
-        </div>
-        <div>
-          <label for="email">E-post</label>
-          <input id="email" type="email" />
-        </div>
-      </div>
+<label for="adminEmpName">Navn</label>
+<input id="adminEmpName" />
+
+<label for="adminEmpId">Ansattnr / ID</label>
+<input id="adminEmpId" />
+
+<label for="adminEmail">E-post</label>
+<input id="adminEmail" type="email" />
+
       <div class="btnbar"><button class="primary" id="btnLoadVideo">Last video</button></div>
       <p class="muted">Bruk YouTube (unlisted) eller erstatt med Vimeo/lokal fil senere.</p>
     </section>
 
     <!-- DELTAKER -->
     <section>
+      <div class="card pad learner-only" id="participantCard">
+  <h3>Deltaker</h3>
+  <div class="grid2">
+    <div>
+      <label for="empName">Navn</label>
+      <input id="empName" autocomplete="name" />
+    </div>
+    <div>
+      <label for="empId">Ansattnr / ID</label>
+      <input id="empId" autocomplete="off" />
+    </div>
+  </div>
+  <label for="email">E-post</label>
+  <input id="email" type="email" autocomplete="email" />
+  <p class="muted">Fyll inn navn + (ID eller e-post).</p>
+</div>
+
       <div class="card pad">
         <h3>Video</h3>
         <div id="playerWrap" style="aspect-ratio:16/9;background:#0b1222;border:1px solid #263247;border-radius:12px;display:grid;place-items:center;color:#89a3d1">
@@ -1041,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
   </script>
 </body>
 </html>
+
 
 
 
