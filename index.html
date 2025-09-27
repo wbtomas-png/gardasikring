@@ -440,11 +440,18 @@ body.pdf-mode header {
     data[id]=c; setStore(data);
     alert('Kurs lagret: '+(c.title||id));
   }
-  function loadCourse(){
-    const id=qs('#courseId').value; const data=getStore();
-    window.__loadedCourse=data[id];
-    applyCourse(data[id]); buildQuizFromLoaded();
-  }
+function loadCourse(){
+  const id = qs('#courseId').value;
+  const data = getStore();
+  window.__loadedCourse = data[id];
+  applyCourse(data[id]);
+  buildQuizFromLoaded();
+
+  __cid = id;          // bruk lokalt kurs-id som nøkkel
+  loadParticipant();   // <— NY
+  updateGate();        // <— NY
+}
+
   function deleteCourse(){
     const id=qs('#courseId').value; if(!id) return;
     const data=getStore(); delete data[id]; setStore(data); alert('Slettet.');
@@ -502,19 +509,17 @@ body.pdf-mode header {
     }
   }
 
-  function liveLinkFor(email){
-    if(!__cid) return null;
-    const uid = encodeURIComponent((email||'').trim());
-    const sep = baseURL().includes('?') ? '&' : '?';
-    const be  = encodeURIComponent(backendURL());
-    return baseURL()
-      + sep + 'cid=' + encodeURIComponent(__cid)
-      + (uid ? ('&uid=' + uid) : '')
-      + (be  ? ('&be='  + be ) : '');
-  }
+function liveLinkFor(){
+  if(!__cid) return null;
+  const u = new URL(baseURL());
+  u.searchParams.set('cid', __cid);
+  const be = backendURL(); if (be) u.searchParams.set('be', be);
+  return u.toString();
+}
+
   function copyLiveLink(){
     if(!__cid){ alert('Kurs er ikke publisert ennå.'); return; }
-    const url = liveLinkFor('');
+    const url = liveLinkFor();
     navigator.clipboard.writeText(url).then(()=>alert('Lenke kopiert: '+url));
   }
 
@@ -522,7 +527,7 @@ body.pdf-mode header {
     if(!__cid){ alert('Publiser kurs først (for å få https-lenke).'); return; }
     const emails=(qs('#inviteList').value||'').split(',').map(x=>x.trim()).filter(Boolean);
     if(!emails.length){ alert('Ingen mottakere.'); return; }
-    const url = liveLinkFor('');
+    const url = liveLinkFor();
     const subj = encodeURIComponent('Kurs: '+(courseFromUI().title||'opplæring'));
     const body = encodeURIComponent((qs('#inviteMsg').value || 'Hei! Klikk lenken for å starte:')+'\n\n'+url+'\n\n');
     window.location.href = 'mailto:'+emails.join(',')+'?subject='+subj+'&body='+body;
@@ -728,16 +733,63 @@ function startTrack(){
   function clearSig(){ ctx.clearRect(0,0,sig.width,sig.height); updateGate(); }
   function isCanvasBlank(c){ const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data; for(let i=3;i<p.length;i+=4){ if(p[i]!==0) return false; } return true; }
 
+function participantOk(){
+  const name = (qs('#empName')?.value || '').trim();
+  const id   = (qs('#empId')?.value   || '').trim();
+  const mail = (qs('#email')?.value   || '').trim();
+  // Minstekrav: navn + (ID eller e-post)
+  return !!(name && (id || mail));
+}
+
+    // --- Autolagring av deltakerfelt per kurs (localStorage) ---
+const PARTICIPANT_KEY = () => `participant:${__cid || 'local'}`;
+
+function saveParticipant(){
+  if (!storageOK()) return;
+  const data = {
+    name: (qs('#empName')?.value || '').trim(),
+    id:   (qs('#empId')?.value   || '').trim(),
+    mail: (qs('#email')?.value   || '').trim()
+  };
+  try { localStorage.setItem(PARTICIPANT_KEY(), JSON.stringify(data)); } catch(_) {}
+}
+
+function loadParticipant(){
+  if (!storageOK()) return;
+  try {
+    const raw = localStorage.getItem(PARTICIPANT_KEY());
+    if (!raw) return;
+    const { name, id, mail } = JSON.parse(raw) || {};
+    if (name) qs('#empName').value = name;
+    if (id)   qs('#empId').value   = id;
+    if (mail) qs('#email').value   = mail;
+  } catch(_) {}
+}
+
+    
   // ---------- Gate & fullfør ----------
-  function updateGate(){
-    const need=Number((window.__loadedCourse?.pass)||qs('#pass').value||80);
-    const tNeed=Number((window.__loadedCourse?.threshold)||qs('#threshold').value||90);
-    const pct=duration?Math.min(100,(seen/duration)*100):0;
-    const okVideo=pct>=tNeed, okQuiz=quizPct>=need, okAck=qs('#ack').checked, hasSig=!isCanvasBlank(sig);
-    const open=okVideo&&okQuiz&&okAck&&hasSig;
-    qs('#btnComplete').disabled=!open;
-    qs('#gateTxt').innerHTML=`Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span>`;
-  }
+function updateGate(){
+  const need   = Number((window.__loadedCourse?.pass)      || qs('#pass').value || 80);
+  const tNeed  = Number((window.__loadedCourse?.threshold) || qs('#threshold').value || 90);
+  const pct    = duration ? Math.min(100, (seen/duration)*100) : 0;
+
+  const okVideo = pct >= tNeed;
+  const okQuiz  = quizPct >= need;
+  const okAck   = qs('#ack').checked;
+  const hasSig  = !isCanvasBlank(sig);
+  const okWho   = participantOk();
+
+  const open = okVideo && okQuiz && okAck && hasSig && okWho;
+  qs('#btnComplete').disabled = !open;
+
+  qs('#gateTxt').innerHTML =
+    `Video: <span class="${okVideo?'ok':'err'}">${okVideo? 'klart':'mangler ('+pct.toFixed(0)+'%/'+tNeed+'%)'}</span> · `+
+    `Quiz: <span class="${okQuiz?'ok':'err'}">${okQuiz? 'klart':'mangler ('+quizPct+'%/'+need+'%)'}</span> · `+
+    `Bekreftelse: <span class="${okAck?'ok':'err'}">${okAck? 'krysset':'mangler'}</span> · `+
+    `Signatur: <span class="${hasSig?'ok':'err'}">${hasSig? 'ok':'mangler'}</span> · `+
+    `Deltakerinfo: <span class="${okWho?'ok':'err'}">${okWho? 'ok':'mangler (navn + ID/epost)'}</span>`;
+}
+
 
   async function completeAndGenerate(){
     const btn=qs('#btnComplete'); if(btn.disabled){ alert('Oppfyll kravene først.'); return; }
@@ -923,6 +975,10 @@ await html2pdf()
         if(data && data.course){
           window.__loadedCourse=data.course; applyCourse(data.course); buildQuizFromLoaded();
           __cid=cid; setPubStatus('Fra lenke: '+__cid);
+
+  loadParticipant();   // ← NY linje
+  updateGate();        // ← NY linje
+          
           if(!adminFlag) enterLearnerMode(data.course);
           initVideo();
         } else banner('Fant ikke kurs for angitt cid.');
@@ -930,44 +986,62 @@ await html2pdf()
     }
   }
 
-  // ---------- Events ----------
-  document.addEventListener('DOMContentLoaded',()=>{
-    qs('#baseUrl').value = defaultBase();
-    fillCourseSelect(); buildQuizEditor(); loadFromURL();
 
-    // admin
-    qs('#tool').addEventListener('change',()=>{ qs('#customWrap').style.display = qs('#tool').value==='custom' ? 'block':'none'; });
-    qs('#btnLoad').addEventListener('click', e=>{ e.preventDefault(); loadCourse(); });
-    qs('#btnDelete').addEventListener('click', e=>{ e.preventDefault(); deleteCourse(); });
-    qs('#btnExportCourse').addEventListener('click', e=>{ e.preventDefault(); exportCourseJSON(); });
-    qs('#btnImportCourse').addEventListener('click', e=>{ e.preventDefault(); importCourseJSON(); });
-    qs('#btnAddQ').addEventListener('click', e=>{ e.preventDefault(); addQuestion(); });
-    qs('#btnAISuggest').addEventListener('click', e=>{ e.preventDefault(); aiSuggestQuiz(); });
-    qs('#btnSaveCourse').addEventListener('click', e=>{ e.preventDefault(); saveCourse(); });
-    qs('#btnTest').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
+// ---------- Events ----------
+document.addEventListener('DOMContentLoaded', () => {
+  // Init grunnleggende UI
+  qs('#baseUrl').value = defaultBase();
+  fillCourseSelect();
+  buildQuizEditor();
+  loadFromURL();
 
-    // publisering/lenker
-    qs('#btnPublish').addEventListener('click', e=>{ e.preventDefault(); publishCourse(); });
-    qs('#btnCopyLive').addEventListener('click', e=>{ e.preventDefault(); copyLiveLink(); });
-
-    // utsending (kun mailto)
-    qs('#btnMailto').addEventListener('click', e=>{ e.preventDefault(); mailtoFallback(); });
-
-    // deltaker
-    qs('#btnLoadVideo').addEventListener('click', e=>{ e.preventDefault(); initVideo(); });
-    qs('#btnGrade').addEventListener('click', e=>{ e.preventDefault(); gradeQuiz(); });
-    qs('#ack').addEventListener('change', updateGate);
-    qs('#btnClearSig').addEventListener('click', e=>{ e.preventDefault(); clearSig(); });
-    qs('#btnComplete').addEventListener('click', e=>{ e.preventDefault(); completeAndGenerate(); });
-
-    // attest
-    qs('#btnPrint').addEventListener('click', e=>{ e.preventDefault(); window.print(); });
-    qs('#btnPDF').addEventListener('click', e=>{ e.preventDefault(); exportPDFCert(); });
-    qs('#btnCSV').addEventListener('click', e=>{ e.preventDefault(); exportCSV(); });
+  // Lytt på deltakerfeltene: oppdatér portvakt + autolagre
+  const handleParticipantInput = () => { updateGate(); saveParticipant(); };
+  ['#empName', '#empId', '#email'].forEach(sel => {
+    const el = qs(sel);
+    if (el) el.addEventListener('input', handleParticipantInput);
   });
+
+  // admin
+  qs('#tool').addEventListener('change', () => {
+    qs('#customWrap').style.display = qs('#tool').value === 'custom' ? 'block' : 'none';
+  });
+  qs('#btnLoad').addEventListener('click',  e => { e.preventDefault(); loadCourse(); });
+  qs('#btnDelete').addEventListener('click',e => { e.preventDefault(); deleteCourse(); });
+  qs('#btnExportCourse').addEventListener('click', e => { e.preventDefault(); exportCourseJSON(); });
+  qs('#btnImportCourse').addEventListener('click', e => { e.preventDefault(); importCourseJSON(); });
+  qs('#btnAddQ').addEventListener('click', e => { e.preventDefault(); addQuestion(); });
+  qs('#btnAISuggest').addEventListener('click', e => { e.preventDefault(); aiSuggestQuiz(); });
+  qs('#btnSaveCourse').addEventListener('click', e => { e.preventDefault(); saveCourse(); });
+  qs('#btnTest').addEventListener('click', e => { e.preventDefault(); initVideo(); });
+
+  // publisering/lenker
+  qs('#btnPublish').addEventListener('click', e => { e.preventDefault(); publishCourse(); });
+  qs('#btnCopyLive').addEventListener('click', e => { e.preventDefault(); copyLiveLink(); });
+
+  // utsending (kun mailto)
+  qs('#btnMailto').addEventListener('click', e => { e.preventDefault(); mailtoFallback(); });
+
+  // deltaker
+  qs('#btnLoadVideo').addEventListener('click', e => { e.preventDefault(); initVideo(); });
+  qs('#btnGrade').addEventListener('click', e => { e.preventDefault(); gradeQuiz(); });
+  qs('#ack').addEventListener('change', updateGate);
+  qs('#btnClearSig').addEventListener('click', e => { e.preventDefault(); clearSig(); });
+  qs('#btnComplete').addEventListener('click', e => { e.preventDefault(); completeAndGenerate(); });
+
+  // attest
+  qs('#btnPrint').addEventListener('click', e => { e.preventDefault(); window.print(); });
+  qs('#btnPDF').addEventListener('click', e => { e.preventDefault(); exportPDFCert(); });
+  qs('#btnCSV').addEventListener('click', e => { e.preventDefault(); exportCSV(); });
+
+  // initial portvakt-status på første last
+  updateGate();
+});
+
   </script>
 </body>
 </html>
+
 
 
 
